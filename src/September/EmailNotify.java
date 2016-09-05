@@ -41,7 +41,7 @@ public class EmailNotify extends ServerInfo {
 	 * Creating a session and logging in This is sample code provided by Oracle
 	 */
 	private IAgileSession login(String username, String password, String connectString) throws APIException {
-
+		
 		// Create the params variable to hold login parameters
 		HashMap params = new HashMap();
 
