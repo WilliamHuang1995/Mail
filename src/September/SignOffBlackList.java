@@ -20,7 +20,7 @@ public class SignOffBlackList implements ICustomTable{
 	public Collection<HashMap<String, String>> getTable(IAgileSession session, Map map) throws Exception {
 
 		List<HashMap<String,String>> result = new ArrayList<HashMap<String,String>>();
-		Ini ini = new Ini("C:\\Agile\\Config.ini");
+		Ini ini = new Ini("C:/Users/user/Desktop/Anselm/Config.ini");
 		LogIt log = new LogIt("");
 		Connection conA = null;
 		
