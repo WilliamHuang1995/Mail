@@ -24,6 +24,8 @@ public class EmailNotify extends ServerInfo {
 	IAgileSession m_session;
 	IAdmin m_admin;
 	AgileSessionFactory m_factory;
+	private static HashMap<String, ArrayList<String>> users = new HashMap<String,ArrayList<String>>();
+	private static ArrayList<String> userList = new ArrayList<String>();
 
 	public EmailNotify() {
 	}
@@ -46,10 +48,34 @@ public class EmailNotify extends ServerInfo {
 		Iterator<HashMap<String,String>> it = table.iterator();
 		while (it.hasNext()){
 			HashMap<String,String> map = it.next();
-			System.out.println(map.get("USER_ACCOUNT"));
+			String user = map.get("USER_ACCOUNT");
+			String changeNumber = map.get("CHANGE_NUMBER");
+			//System.out.println(changeNumber);
+			try {
+				//try to get user, if dont exist, add user
+				ArrayList<String> toSign = users.get(user);
+				toSign.add(changeNumber);
+				users.put(user, toSign);
+			} catch (Exception e) {
+				ArrayList<String> toSign = new ArrayList<String>();
+				toSign.add(changeNumber);
+				users.put(user, toSign);
+				
+			}
 		}
+		Iterator iter = users.entrySet().iterator();
+	    while (iter.hasNext()) {
+	        Map.Entry pair = (Map.Entry)iter.next();
+	        //System.out.println(pair.getKey() + " = " + pair.getValue());
+	        
+	    }
+		
+		
 		
 	}
+	/*
+	 * 郵件內容需包括一個表格，表頭欄位為：表單編號(可超連結)、表單描述、站別、已持續時間(天)
+	 */
 	public Collection<HashMap<String, String>> getTable(IAgileSession session, Map map) throws Exception {
 
 		List<HashMap<String,String>> result = new ArrayList<HashMap<String,String>>();
@@ -81,7 +107,7 @@ public class EmailNotify extends ServerInfo {
 			ResultSet rs = conA.createStatement().executeQuery(sql);
 			ResultSetMetaData rsmd = rs.getMetaData();
 			int numCols = rsmd.getColumnCount();
-			for(int i=1;i<=numCols;i++)log.log(rsmd.getColumnName(i));
+			for(int i=1;i<=numCols;i++)log.log(rsmd.getColumnName(i)+"　"+ i);
 			int count = 0;
 			while(rs.next()){
 				Map<String,String> datarow = new HashMap<String,String>();
