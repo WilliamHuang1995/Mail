@@ -9,6 +9,19 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+
+import javax.mail.Message;
+import javax.mail.MessagingException;
+import javax.mail.Multipart;
+import javax.mail.NoSuchProviderException;
+import javax.mail.Session;
+import javax.mail.Transport;
+import javax.mail.internet.AddressException;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeBodyPart;
+import javax.mail.internet.MimeMessage;
+import javax.mail.internet.MimeMultipart;
 
 import com.agile.api.APIException;
 import com.agile.api.AgileSessionFactory;
@@ -24,8 +37,8 @@ public class EmailNotify extends ServerInfo {
 	IAgileSession m_session;
 	IAdmin m_admin;
 	AgileSessionFactory m_factory;
-	private static HashMap<String, ArrayList<String>> users = new HashMap<String,ArrayList<String>>();
-	private static ArrayList<String> userList = new ArrayList<String>();
+	Properties props;
+	static HashMap<String, ArrayList<String>> usersMap = new HashMap<String, ArrayList<String>>();
 
 	public EmailNotify() {
 	}
@@ -44,49 +57,95 @@ public class EmailNotify extends ServerInfo {
 		if (m_session != null) {
 			System.out.println("Successfully logged in.");
 		}
-		Collection<HashMap<String, String>> table = getTable(m_session,null);
-		Iterator<HashMap<String,String>> it = table.iterator();
-		while (it.hasNext()){
-			HashMap<String,String> map = it.next();
-			String user = map.get("USER_ACCOUNT");
-			String changeNumber = map.get("CHANGE_NUMBER");
-			//System.out.println(changeNumber);
-			try {
-				//try to get user, if dont exist, add user
-				ArrayList<String> toSign = users.get(user);
-				toSign.add(changeNumber);
-				users.put(user, toSign);
-			} catch (Exception e) {
-				ArrayList<String> toSign = new ArrayList<String>();
-				toSign.add(changeNumber);
-				users.put(user, toSign);
-				
-			}
-		}
-		Iterator iter = users.entrySet().iterator();
-	    while (iter.hasNext()) {
-	        Map.Entry pair = (Map.Entry)iter.next();
-	        //System.out.println(pair.getKey() + " = " + pair.getValue());
-	        
-	    }
-		
-		
-		
+
+		System.out.println("initializing properties");
+		props = initializeProperties();
+		System.out.println("properties initialized properly");
+		getTable(m_session, null);
+
 	}
+
+	private Properties initializeProperties() {
+		Properties props = new Properties();
+		try {
+
+			// 初始設定，username 和 password 非必要
+
+			props.setProperty("mail.transport.protocol", "smtp");
+			props.setProperty("mail.host", "mail.anselm.com.tw");
+			props.setProperty("mail.protocol.port", "25");
+			props.setProperty("mail.smtp.auth", "true");
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			System.exit(1);
+		}
+		return props;
+	}
+
+	private static void sendMail(Properties props) {
+		try {
+		
+			Iterator iter = usersMap.entrySet().iterator();
+			while (iter.hasNext()) {
+				Map.Entry pair = (Map.Entry) iter.next();
+				System.out.println(pair.getKey() + " = " + pair.getValue());
+
+				Session mailSession = Session.getDefaultInstance(props, null);
+				Transport transport = mailSession.getTransport();
+				// 產生整封 email 的主體 message
+				MimeMessage message = new MimeMessage(mailSession);
+
+				// 設定主旨
+				message.setSubject("您的PLM待簽核表單總覽-2016/09/05");
+				MimeBodyPart textPart = new MimeBodyPart();
+				StringBuffer html = new StringBuffer();
+
+				html.append("\n<a href='http://192.168.13.250:7001/Agile/'>Agile PLM</a>");
+
+				html.append("<table><tr><td>表單編號</td><td>表單描述</td><td>站別</td><td>已持續時間(天)</td></tr>");
+				ArrayList<String> val = (ArrayList<String>) pair.getValue();
+				while(!val.isEmpty()){
+					html.append(val.get(0));
+					val.remove(0);
+				}
+				html.append("</table>");
+				textPart.setContent(html.toString(), "text/html; charset=UTF-8");
+				Multipart email = new MimeMultipart();
+				email.addBodyPart(textPart);
+				message.setContent(email);
+				message.addRecipient(Message.RecipientType.TO, new InternetAddress("jjsu@anselm.com.tw"));
+				message.setFrom(new InternetAddress("william@anselm.com.tw")); // 寄件者
+				transport.connect("william@anselm.com.tw", "epacsenur123");
+				transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
+				System.out.println("Completed.");
+
+				transport.close();
+			}
+		} catch (AddressException e) {
+			e.printStackTrace();
+		} catch (NoSuchProviderException e) {
+			e.printStackTrace();
+		} catch (MessagingException e) {
+			e.printStackTrace();
+		}
+		
+
+	}
+
 	/*
 	 * 郵件內容需包括一個表格，表頭欄位為：表單編號(可超連結)、表單描述、站別、已持續時間(天)
 	 */
-	public Collection<HashMap<String, String>> getTable(IAgileSession session, Map map) throws Exception {
+	public void getTable(IAgileSession session, Map map) throws Exception {
 
-		List<HashMap<String,String>> result = new ArrayList<HashMap<String,String>>();
+
 		Ini ini = new Ini("C:/Users/user/Desktop/Anselm/Config.ini");
 		LogIt log = new LogIt("");
 		Connection conA = null;
-		
-		try{
+
+		try {
 			conA = AUtil.getDbConn(ini, "AgileDB");
-			String sql = 
-					"select "
+			String sql = "select "
 					+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
 					+ ", round((sysdate-w.last_upd),2)  DAYS 			"
 					+ ", s.user_name_assigned   		USER_NAME 		"
@@ -98,42 +157,54 @@ public class EmailNotify extends ServerInfo {
 					+ ", n2.description 				STATUS_TO 		"
 					+ ", c.description 					CHANGE_DESC 	"
 					+ ", s.id, s.change_id, s.process_id, s.user_assigned "
-					+ "from signoff s, change c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "+
-					"where "+
-					"  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "+
-					"  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "+
-					"and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "+
-					"order by days desc, s.last_upd desc";
+					+ "from signoff s, change c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "
+					+ "where " + "  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "
+					+ "  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "
+					+ "and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "
+					+ "order by days desc, s.last_upd desc";
 			ResultSet rs = conA.createStatement().executeQuery(sql);
 			ResultSetMetaData rsmd = rs.getMetaData();
 			int numCols = rsmd.getColumnCount();
-			for(int i=1;i<=numCols;i++)log.log(rsmd.getColumnName(i)+"　"+ i);
-			int count = 0;
-			while(rs.next()){
-				Map<String,String> datarow = new HashMap<String,String>();
-				for(int i=1;i<=numCols;i++){
-					datarow.put(rsmd.getColumnName(i), rs.getString(i));
-					//log.log(i, rs.getString(i));
+			//for (int i = 1; i <= numCols; i++)
+				//log.log(rsmd.getColumnName(i) + "　" + i);
+			while (rs.next()) {
+				HashMap<String, String> datarow = new HashMap<String, String>();
+				String user = rs.getString(4);
+				String changeNumber = rs.getString(6);
+				String changeDesc =	rs.getString(10);
+				String status =	rs.getString(8);
+				String duration = rs.getString(1);
+				if (usersMap.containsKey(user)) {
+					ArrayList<String> list = usersMap.get(user);
+					list.add("<tr><td>" + changeNumber + "</td><td>" + changeDesc + "</td><td>"
+							+ status + "</td><td>" + duration + "</td></tr>");
+					usersMap.put(user, list);
+				} else {
+					ArrayList<String> list = new ArrayList<String>();
+					list.add("<tr><td>" + changeNumber + "</td><td>" + changeDesc + "</td><td>"
+							+ status + "</td><td>" + duration + "</td></tr>");
+					usersMap.put(user, list);
 				}
-				result.add((HashMap<String, String>) datarow);
-				if(count>1000)break;
 			}
-		}catch(Exception e){
+		} catch (Exception e) {
 			e.printStackTrace();
-		}finally{
-			try{conA.close();log.log("Agile DB Closed.");}catch(Exception e){}
+		} finally {
+			try {
+				conA.close();
+				log.log("Agile DB Closed.");
+				log.log("Sending Emails.");
+				sendMail(props);
+				
+			} catch (Exception e) {
+			}
 		}
-		
-		
-		return result;
 	}
-
 
 	/*
 	 * Creating a session and logging in This is sample code provided by Oracle
 	 */
 	private IAgileSession login(String username, String password, String connectString) throws APIException {
-		
+
 		// Create the params variable to hold login parameters
 		HashMap params = new HashMap();
 
