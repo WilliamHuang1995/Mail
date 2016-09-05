@@ -6,21 +6,19 @@ import java.sql.ResultSetMetaData;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
 import com.agile.api.APIException;
 import com.agile.api.AgileSessionFactory;
-import com.agile.api.ChangeConstants;
 import com.agile.api.IAdmin;
 import com.agile.api.IAgileSession;
-import com.agile.api.IChange;
-import com.agile.api.IStatus;
-import com.agile.api.IUser;
-import com.agile.api.UserConstants;
 import com.anselm.plm.util.AUtil;
 import com.anselm.plm.utilobj.Ini;
 import com.anselm.plm.utilobj.LogIt;
+
+import sun.rmi.runtime.Log;
 
 public class EmailNotify extends ServerInfo {
 	IAgileSession m_session;
@@ -45,6 +43,11 @@ public class EmailNotify extends ServerInfo {
 			System.out.println("Successfully logged in.");
 		}
 		Collection<HashMap<String, String>> table = getTable(m_session,null);
+		Iterator<HashMap<String,String>> it = table.iterator();
+		while (it.hasNext()){
+			HashMap<String,String> map = it.next();
+			System.out.println(map.get("USER_ACCOUNT"));
+		}
 		
 	}
 	public Collection<HashMap<String, String>> getTable(IAgileSession session, Map map) throws Exception {
@@ -82,7 +85,10 @@ public class EmailNotify extends ServerInfo {
 			int count = 0;
 			while(rs.next()){
 				Map<String,String> datarow = new HashMap<String,String>();
-				for(int i=1;i<=numCols;i++)datarow.put(rsmd.getColumnName(i), rs.getString(i));
+				for(int i=1;i<=numCols;i++){
+					datarow.put(rsmd.getColumnName(i), rs.getString(i));
+					//log.log(i, rs.getString(i));
+				}
 				result.add((HashMap<String, String>) datarow);
 				if(count>1000)break;
 			}
