@@ -1,7 +1,5 @@
-<snippet>
-  <content><![CDATA[
-# ${1:Project Name}
-TODO: Write a project description
+## Mail
+Retrieving information by accessing database and sending emails to relevant people based on retrieved information
 ## Installation
 TODO: Describe the installation process
 ## Usage
@@ -18,6 +16,3 @@ TODO: Write history
 TODO: Write credits
 ## License
 TODO: Write license
-]]></content>
-  <tabTrigger>readme</tabTrigger>
-</snippet>
