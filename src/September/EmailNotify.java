@@ -33,7 +33,7 @@ import com.anselm.plm.util.AUtil;
 import com.anselm.plm.utilobj.Ini;
 import com.anselm.plm.utilobj.LogIt;
 
-public class EmailNotify{
+public class EmailNotify {
 	static IAgileSession m_session;
 	IAdmin m_admin;
 	AgileSessionFactory m_factory;
@@ -107,7 +107,9 @@ public class EmailNotify{
 
 	private static void sendMail(Properties props) {
 		try {
-
+			// determine if config wants logo
+			String logo = ini.getValue("Settings", "logo");
+			boolean useLogo = logo.equalsIgnoreCase("yes");
 			Iterator iter = usersMap.entrySet().iterator();
 			while (iter.hasNext()) {
 				Map.Entry pair = (Map.Entry) iter.next();
@@ -118,7 +120,7 @@ public class EmailNotify{
 				try {
 					user = (IUser) m_session.getObject(UserConstants.CLASS_USER_BASE_CLASS, key);
 					userEmail = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
-					//System.out.println(userEmail);
+					// System.out.println(userEmail);
 				} catch (APIException e) {
 					System.out.println("user not found");
 					e.printStackTrace();
@@ -131,11 +133,11 @@ public class EmailNotify{
 
 				// 設定主旨
 				String subject = "Agile PLM: Changes that still need your approval";
-				if(ini.getValue("Admin Mail", "subject")!=null){
+				if (ini.getValue("Admin Mail", "subject") != null) {
 					subject = ini.getValue("Admin Mail", "subject");
 				}
-				
-				message.setSubject(subject,"UTF-8");
+
+				message.setSubject(subject, "UTF-8");
 				MimeBodyPart textPart = new MimeBodyPart();
 				StringBuffer html = new StringBuffer();
 
@@ -145,7 +147,9 @@ public class EmailNotify{
 						+ "td,th{text-align:center;}" + "h3 {color: maroon;margin-left: 80px;}"
 						+ "</style></head><body>");
 				html.append("<h3>您的PLM待簽核表單總覽</h3>");
-				html.append("<img src='cid:image'/><br>");
+				if (useLogo) {
+					html.append("<img src='cid:image'/><br>");
+				}
 				html.append("<table><tr><td>表單類別</td><td>表單編號</td><td>表單描述</td><td>站別</td><td>已持續時間(天)</td></tr>");
 				ArrayList<String> val = (ArrayList<String>) pair.getValue();
 				while (!val.isEmpty()) {
@@ -155,17 +159,17 @@ public class EmailNotify{
 				html.append("</table></body></html>");
 				textPart.setContent(html.toString(), "text/html; charset=UTF-8");
 
-				// Oracle Logo
-				MimeBodyPart picturePart = new MimeBodyPart();
-				FileDataSource fds = new FileDataSource("Oracle-logo.png");
-				picturePart.setDataHandler(new DataHandler(fds));
-				picturePart.setFileName(fds.getName());
-				picturePart.setHeader("Content-ID", "<image>");
-
 				Multipart email = new MimeMultipart();
 				email.addBodyPart(textPart);
-				email.addBodyPart(picturePart);
-
+				// Oracle Logo
+				if (useLogo) {
+					MimeBodyPart picturePart = new MimeBodyPart();
+					FileDataSource fds = new FileDataSource("logo.png");
+					picturePart.setDataHandler(new DataHandler(fds));
+					picturePart.setFileName(fds.getName());
+					picturePart.setHeader("Content-ID", "<image>");
+					email.addBodyPart(picturePart);
+				}
 				message.setContent(email);
 				// replace wjhuang@ucsd.edu with userEmail
 				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
