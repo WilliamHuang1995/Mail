@@ -4,10 +4,8 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -35,15 +33,17 @@ import com.anselm.plm.util.AUtil;
 import com.anselm.plm.utilobj.Ini;
 import com.anselm.plm.utilobj.LogIt;
 
-import sun.rmi.runtime.Log;
-
 public class EmailNotify extends ServerInfo {
 	static IAgileSession m_session;
 	IAdmin m_admin;
 	AgileSessionFactory m_factory;
 	Properties props;
 	static HashMap<String, ArrayList<String>> usersMap = new HashMap<String, ArrayList<String>>();
-	static final String URL = "<a href='http://192.168.13.250:7001/Agile/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=ChangeHandler&classid=6000&objid=";
+	static String URL = "<a href='";
+	static String SUBADDRESS = "action=OpenEmailObject&isFromNotf=true&module=ChangeHandler&classid=6000&objid=";
+	static Ini ini = new Ini();
+	static String USERNAME;
+	static String PASSWORD;
 
 	public EmailNotify() {
 	}
@@ -58,16 +58,16 @@ public class EmailNotify extends ServerInfo {
 	}
 
 	private void run() throws Exception {
-		this.m_session = login(username, password, connectString);
+		EmailNotify.m_session = login(username, password, connectString);
 		if (m_session != null) {
 			System.out.println("Successfully logged in.");
 		}
-
-		System.out.println("initializing properties");
+		
+		System.out.println("initializing email properties");
 		props = initializeProperties();
 		System.out.println("properties initialized properly");
 		getTable(m_session, null);
-
+		
 	}
 
 	private Properties initializeProperties() {
@@ -75,10 +75,12 @@ public class EmailNotify extends ServerInfo {
 		try {
 
 			// 初始設定，username 和 password 非必要
-
-			props.setProperty("mail.transport.protocol", "smtp");
-			props.setProperty("mail.host", "mail.anselm.com.tw");
-			props.setProperty("mail.protocol.port", "25");
+			String transportProtocol = ini.getValue("Admin Mail", "transport protocol");
+			String host = ini.getValue("Admin Mail", "host");
+			String protocolPort = ini.getValue("Admin Mail", "protocol port");
+			props.setProperty("mail.transport.protocol", transportProtocol);
+			props.setProperty("mail.host", host);
+			props.setProperty("mail.protocol.port", protocolPort);
 			props.setProperty("mail.smtp.auth", "true");
 
 		} catch (Exception e) {
@@ -112,20 +114,26 @@ public class EmailNotify extends ServerInfo {
 				MimeMessage message = new MimeMessage(mailSession);
 
 				// 設定主旨
-				message.setSubject("您的PLM待簽核表單總覽-2016/09/05");
+				message.setSubject("您的PLM待簽核表單總覽");
 				MimeBodyPart textPart = new MimeBodyPart();
 				StringBuffer html = new StringBuffer();
 
 				//html.append("\n<a href='http://192.168.13.250:7001/Agile/'>Agile PLM</a>");
+				html.append("<!DOCTYPE html><html><head><style>"
+						+ "table,th,td{border: 1px solid black; }"
+						+ "table {width:200%;}"
+						+ "td,th{text-align:center;}"
+						+ "h3 {color: maroon;margin-left: 80px;}"
+						+ "</style></head><body>");
 				html.append("<h3>您的PLM待簽核表單總覽</h3>");
 				html.append("<img src='cid:image'/><br>");
-				html.append("<table><tr><td>表單編號</td><td>表單描述</td><td>站別</td><td>已持續時間(天)</td></tr>");
+				html.append("<table><tr><td>表單類別</td><td>表單編號</td><td>表單描述</td><td>站別</td><td>已持續時間(天)</td></tr>");
 				ArrayList<String> val = (ArrayList<String>) pair.getValue();
 				while (!val.isEmpty()) {
 					html.append(val.get(0));
 					val.remove(0);
 				}
-				html.append("</table>");
+				html.append("</table></body></html>");
 				textPart.setContent(html.toString(), "text/html; charset=UTF-8");
 				
 				//Oracle Logo
@@ -140,13 +148,17 @@ public class EmailNotify extends ServerInfo {
 				email.addBodyPart(picturePart);
 				
 				message.setContent(email);
-				message.addRecipient(Message.RecipientType.TO, new InternetAddress("johnnylee@anselm.com.tw"));
-				message.setFrom(new InternetAddress("william@anselm.com.tw")); // 寄件者
-				transport.connect("william@anselm.com.tw", "epacsenur123");
+				//replace wjhuang@ucsd.edu with userEmail
+				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
+				String username = ini.getValue("Admin Mail", "username");
+				String password = ini.getValue("Admin Mail", "password");
+				message.setFrom(new InternetAddress(username)); // 寄件者
+				transport.connect(username, password);
 				transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
 				System.out.println("Completed.");
-
+				System.exit(0);
 				transport.close();
+				
 			}
 		} catch (AddressException e) {
 			e.printStackTrace();
@@ -163,10 +175,14 @@ public class EmailNotify extends ServerInfo {
 	 */
 	public void getTable(IAgileSession session, Map map) throws Exception {
 
-		Ini ini = new Ini("C:/Users/user/Desktop/Anselm/Config.ini");
 		LogIt log = new LogIt("");
+		if(ini.getValue("Server Info", "URL")==null) {
+			log.log("Initialize error, please refer to value 'URL'");
+			System.exit(1);
+		}
+		URL = URL+ini.getValue("Server Info", "URL")+SUBADDRESS;
 		Connection conA = null;
-
+		System.out.println(URL);
 		try {
 			conA = AUtil.getDbConn(ini, "AgileDB");
 			String sql = "select "
@@ -195,18 +211,19 @@ public class EmailNotify extends ServerInfo {
 				HashMap<String, String> datarow = new HashMap<String, String>();
 				String user = rs.getString(4);
 				String changeNumber = rs.getString(6);
+				String changeType = rs.getString(5);
 				String changeDesc = rs.getString(10);
 				String status = rs.getString(8);
 				String duration = rs.getString(1);
 				String changeID = rs.getString(12);
 				if (usersMap.containsKey(user)) {
 					ArrayList<String> list = usersMap.get(user);
-					list.add("<tr><td>" + URL + changeID + "'>" + changeNumber + "</a></td><td>" + changeDesc
+					list.add("<tr><td>"+changeType+"</td><td>" + URL + changeID + "'>" + changeNumber + "</a></td><td>" + changeDesc
 							+ "</td><td>" + status + "</td><td>" + duration + "</td></tr>");
 					usersMap.put(user, list);
 				} else {
 					ArrayList<String> list = new ArrayList<String>();
-					list.add("<tr><td>" + URL + changeID + "'>" + changeNumber + "</a></td><td>" + changeDesc
+					list.add("<tr><td>"+changeType+"</td><td>" + URL + changeID + "'>" + changeNumber + "</a></td><td>" + changeDesc
 							+ "</td><td>" + status + "</td><td>" + duration + "</td></tr>");
 					usersMap.put(user, list);
 				}
