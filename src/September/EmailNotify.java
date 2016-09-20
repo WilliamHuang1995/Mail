@@ -62,12 +62,24 @@ public class EmailNotify extends ServerInfo {
 		if (m_session != null) {
 			System.out.println("Successfully logged in.");
 		}
-		
+
 		System.out.println("initializing email properties");
 		props = initializeProperties();
 		System.out.println("properties initialized properly");
-		getTable(m_session, null);
-		
+		boolean c1, c2, c3;
+		if (c1 = ini.getValue("Settings", "change").equalsIgnoreCase("yes")) {
+			getChangeTable(m_session, null);
+		}
+		if (c2 = ini.getValue("Settings", "psr").equalsIgnoreCase("yes")) {
+			getPSRTable(m_session, null);
+		}
+		if (c3 = ini.getValue("Settings", "qcr").equalsIgnoreCase("yes")) {
+			getQCRTable(m_session, null);
+		}
+		if (c1 || c2 || c3) {
+			System.out.println("Sending mail");
+			sendMail(props);
+		}
 	}
 
 	private Properties initializeProperties() {
@@ -118,12 +130,10 @@ public class EmailNotify extends ServerInfo {
 				MimeBodyPart textPart = new MimeBodyPart();
 				StringBuffer html = new StringBuffer();
 
-				//html.append("\n<a href='http://192.168.13.250:7001/Agile/'>Agile PLM</a>");
-				html.append("<!DOCTYPE html><html><head><style>"
-						+ "table,th,td{border: 1px solid black; }"
-						+ "table {width:200%;}"
-						+ "td,th{text-align:center;}"
-						+ "h3 {color: maroon;margin-left: 80px;}"
+				// html.append("\n<a
+				// href='http://192.168.13.250:7001/Agile/'>Agile PLM</a>");
+				html.append("<!DOCTYPE html><html><head><style>" + "table,th,td{border: 1px solid black; }"
+						+ "td,th{text-align:center;}" + "h3 {color: maroon;margin-left: 80px;}"
 						+ "</style></head><body>");
 				html.append("<h3>您的PLM待簽核表單總覽</h3>");
 				html.append("<img src='cid:image'/><br>");
@@ -135,30 +145,30 @@ public class EmailNotify extends ServerInfo {
 				}
 				html.append("</table></body></html>");
 				textPart.setContent(html.toString(), "text/html; charset=UTF-8");
-				
-				//Oracle Logo
+
+				// Oracle Logo
 				MimeBodyPart picturePart = new MimeBodyPart();
 				FileDataSource fds = new FileDataSource("Oracle-logo.png");
 				picturePart.setDataHandler(new DataHandler(fds));
 				picturePart.setFileName(fds.getName());
 				picturePart.setHeader("Content-ID", "<image>");
-				
+
 				Multipart email = new MimeMultipart();
 				email.addBodyPart(textPart);
 				email.addBodyPart(picturePart);
-				
+
 				message.setContent(email);
-				//replace wjhuang@ucsd.edu with userEmail
-				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
+				// replace wjhuang@ucsd.edu with userEmail
+				message.addRecipient(Message.RecipientType.TO, new InternetAddress("sam@anselm.com.tw"));
 				String username = ini.getValue("Admin Mail", "username");
 				String password = ini.getValue("Admin Mail", "password");
 				message.setFrom(new InternetAddress(username)); // 寄件者
 				transport.connect(username, password);
 				transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
 				System.out.println("Completed.");
-				System.exit(0);
+				//System.exit(0);
 				transport.close();
-				
+
 			}
 		} catch (AddressException e) {
 			e.printStackTrace();
@@ -173,14 +183,14 @@ public class EmailNotify extends ServerInfo {
 	/*
 	 * 郵件內容需包括一個表格，表頭欄位為：表單編號(可超連結)、表單描述、站別、已持續時間(天)
 	 */
-	public void getTable(IAgileSession session, Map map) throws Exception {
+	public void getChangeTable(IAgileSession session, Map map) throws Exception {
 
 		LogIt log = new LogIt("");
-		if(ini.getValue("Server Info", "URL")==null) {
+		if (ini.getValue("Server Info", "URL") == null) {
 			log.log("Initialize error, please refer to value 'URL'");
 			System.exit(1);
 		}
-		URL = URL+ini.getValue("Server Info", "URL")+SUBADDRESS;
+		URL = URL + ini.getValue("Server Info", "URL") + SUBADDRESS;
 		Connection conA = null;
 		System.out.println(URL);
 		try {
@@ -218,28 +228,152 @@ public class EmailNotify extends ServerInfo {
 				String changeID = rs.getString(12);
 				if (usersMap.containsKey(user)) {
 					ArrayList<String> list = usersMap.get(user);
-					list.add("<tr><td>"+changeType+"</td><td>" + URL + changeID + "'>" + changeNumber + "</a></td><td>" + changeDesc
-							+ "</td><td>" + status + "</td><td>" + duration + "</td></tr>");
+					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
+							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
+							+ duration + "</td></tr>");
 					usersMap.put(user, list);
 				} else {
 					ArrayList<String> list = new ArrayList<String>();
-					list.add("<tr><td>"+changeType+"</td><td>" + URL + changeID + "'>" + changeNumber + "</a></td><td>" + changeDesc
-							+ "</td><td>" + status + "</td><td>" + duration + "</td></tr>");
+					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
+							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
+							+ duration + "</td></tr>");
 					usersMap.put(user, list);
 				}
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
-		} finally {
-			try {
-				conA.close();
-				log.log("Agile DB Closed.");
-				log.log("Sending Emails.");
-				sendMail(props);
-
-			} catch (Exception e) {
-			}
 		}
+		conA.close();
+		log.log("Agile DB Closed.");
+	}
+
+	public void getQCRTable(IAgileSession session, Map map) throws Exception {
+
+		LogIt log = new LogIt("");
+		if (ini.getValue("Server Info", "URL") == null) {
+			log.log("Initialize error, please refer to value 'URL'");
+			System.exit(1);
+		}
+		URL = URL + ini.getValue("Server Info", "URL") + SUBADDRESS;
+		Connection conA = null;
+		System.out.println(URL);
+		try {
+			conA = AUtil.getDbConn(ini, "AgileDB");
+			String sql = "select "
+					+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
+					+ ", round((sysdate-w.last_upd),2)  DAYS 			"
+					+ ", s.user_name_assigned   		USER_NAME 		"
+					+ ", usr.loginid 					USER_ACCOUNT	"
+					+ ", n3.description 				CHANGE_TYPE 	"
+					+ ", c.QCR_NUMBER					CHANGE_NUMBER 	"
+					+ ", s.last_upd 					LAST_UPD 		"
+					+ ", n1.description 				STATUS_FROM		"
+					+ ", n2.description 				STATUS_TO 		"
+					+ ", c.description 					CHANGE_DESC 	"
+					+ ", s.id, s.change_id, s.process_id, s.user_assigned "
+					+ "from signoff s, qcr c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "
+					+ "where " + "  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "
+					+ "  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "
+					+ "and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "
+					+ "order by days desc, s.last_upd desc";
+			ResultSet rs = conA.createStatement().executeQuery(sql);
+			ResultSetMetaData rsmd = rs.getMetaData();
+			int numCols = rsmd.getColumnCount();
+			// for (int i = 1; i <= numCols; i++)
+			// log.log(rsmd.getColumnName(i) + " " + i);
+			while (rs.next()) {
+				HashMap<String, String> datarow = new HashMap<String, String>();
+				String user = rs.getString(4);
+				String changeNumber = rs.getString(6);
+				String changeType = rs.getString(5);
+				String changeDesc = rs.getString(10);
+				String status = rs.getString(8);
+				String duration = rs.getString(1);
+				String changeID = rs.getString(12);
+				if (usersMap.containsKey(user)) {
+					ArrayList<String> list = usersMap.get(user);
+					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
+							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
+							+ duration + "</td></tr>");
+					usersMap.put(user, list);
+				} else {
+					ArrayList<String> list = new ArrayList<String>();
+					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
+							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
+							+ duration + "</td></tr>");
+					usersMap.put(user, list);
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		conA.close();
+		log.log("Agile DB Closed.");
+	}
+
+	public void getPSRTable(IAgileSession session, Map map) throws Exception {
+
+		LogIt log = new LogIt("");
+		if (ini.getValue("Server Info", "URL") == null) {
+			log.log("Initialize error, please refer to value 'URL'");
+			System.exit(1);
+		}
+		URL = URL + ini.getValue("Server Info", "URL") + SUBADDRESS;
+		Connection conA = null;
+		System.out.println(URL);
+		try {
+			conA = AUtil.getDbConn(ini, "AgileDB");
+			String sql = "select "
+					+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
+					+ ", round((sysdate-w.last_upd),2)  DAYS 			"
+					+ ", s.user_name_assigned   		USER_NAME 		"
+					+ ", usr.loginid 					USER_ACCOUNT	"
+					+ ", n3.description 				CHANGE_TYPE 	"
+					+ ", c.PSR_NO		 				CHANGE_NUMBER 	"
+					+ ", s.last_upd 					LAST_UPD 		"
+					+ ", n1.description 				STATUS_FROM		"
+					+ ", n2.description 				STATUS_TO 		"
+					+ ", c.description 					CHANGE_DESC 	"
+					+ ", s.id, s.change_id, s.process_id, s.user_assigned "
+					+ "from signoff s, psr c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "
+					+ "where " + "  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "
+					+ "  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "
+					+ "and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "
+					+ "order by days desc, s.last_upd desc";
+			ResultSet rs = conA.createStatement().executeQuery(sql);
+			ResultSetMetaData rsmd = rs.getMetaData();
+			int numCols = rsmd.getColumnCount();
+			// for (int i = 1; i <= numCols; i++)
+			// log.log(rsmd.getColumnName(i) + " " + i);
+			while (rs.next()) {
+				HashMap<String, String> datarow = new HashMap<String, String>();
+				String user = rs.getString(4);
+				String changeNumber = rs.getString(6);
+				String changeType = rs.getString(5);
+				String changeDesc = rs.getString(10);
+				String status = rs.getString(8);
+				String duration = rs.getString(1);
+				String changeID = rs.getString(12);
+				if (usersMap.containsKey(user)) {
+					ArrayList<String> list = usersMap.get(user);
+					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
+							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
+							+ duration + "</td></tr>");
+					usersMap.put(user, list);
+				} else {
+					ArrayList<String> list = new ArrayList<String>();
+					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
+							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
+							+ duration + "</td></tr>");
+					usersMap.put(user, list);
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+
+		}
+		conA.close();
+		log.log("Agile DB Closed.");
 	}
 
 	/*
