@@ -33,7 +33,7 @@ import com.anselm.plm.util.AUtil;
 import com.anselm.plm.utilobj.Ini;
 import com.anselm.plm.utilobj.LogIt;
 
-public class EmailNotify extends ServerInfo {
+public class EmailNotify{
 	static IAgileSession m_session;
 	IAdmin m_admin;
 	AgileSessionFactory m_factory;
@@ -58,6 +58,9 @@ public class EmailNotify extends ServerInfo {
 	}
 
 	private void run() throws Exception {
+		String username = ini.getValue("Server Info", "user");
+		String password = ini.getValue("Server Info", "password");
+		String connectString = ini.getValue("Server Info", "connectString");
 		EmailNotify.m_session = login(username, password, connectString);
 		if (m_session != null) {
 			System.out.println("Successfully logged in.");
@@ -111,10 +114,11 @@ public class EmailNotify extends ServerInfo {
 				// System.out.println(pair.getKey() + " = " + pair.getValue());
 				IUser user;
 				String key = (String) pair.getKey();
+				String userEmail = "william@anselm.com.tw";
 				try {
 					user = (IUser) m_session.getObject(UserConstants.CLASS_USER_BASE_CLASS, key);
-					String userEmail = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
-					System.out.println(userEmail);
+					userEmail = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
+					//System.out.println(userEmail);
 				} catch (APIException e) {
 					System.out.println("user not found");
 					e.printStackTrace();
@@ -126,7 +130,12 @@ public class EmailNotify extends ServerInfo {
 				MimeMessage message = new MimeMessage(mailSession);
 
 				// 設定主旨
-				message.setSubject("您的PLM待簽核表單總覽");
+				String subject = "Agile PLM: Changes that still need your approval";
+				if(ini.getValue("Admin Mail", "subject")!=null){
+					subject = ini.getValue("Admin Mail", "subject");
+				}
+				
+				message.setSubject(subject,"UTF-8");
 				MimeBodyPart textPart = new MimeBodyPart();
 				StringBuffer html = new StringBuffer();
 
@@ -159,14 +168,14 @@ public class EmailNotify extends ServerInfo {
 
 				message.setContent(email);
 				// replace wjhuang@ucsd.edu with userEmail
-				message.addRecipient(Message.RecipientType.TO, new InternetAddress("sam@anselm.com.tw"));
+				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
 				String username = ini.getValue("Admin Mail", "username");
 				String password = ini.getValue("Admin Mail", "password");
 				message.setFrom(new InternetAddress(username)); // 寄件者
 				transport.connect(username, password);
 				transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
 				System.out.println("Completed.");
-				//System.exit(0);
+				System.exit(0);
 				transport.close();
 
 			}
@@ -186,6 +195,7 @@ public class EmailNotify extends ServerInfo {
 	public void getChangeTable(IAgileSession session, Map map) throws Exception {
 
 		LogIt log = new LogIt("");
+		log.log("Accessing database for Change");
 		if (ini.getValue("Server Info", "URL") == null) {
 			log.log("Initialize error, please refer to value 'URL'");
 			System.exit(1);
@@ -250,6 +260,7 @@ public class EmailNotify extends ServerInfo {
 	public void getQCRTable(IAgileSession session, Map map) throws Exception {
 
 		LogIt log = new LogIt("");
+		log.log("Accessing database for QCR");
 		if (ini.getValue("Server Info", "URL") == null) {
 			log.log("Initialize error, please refer to value 'URL'");
 			System.exit(1);
@@ -314,13 +325,13 @@ public class EmailNotify extends ServerInfo {
 	public void getPSRTable(IAgileSession session, Map map) throws Exception {
 
 		LogIt log = new LogIt("");
+		log.log("Accessing database for PSR");
 		if (ini.getValue("Server Info", "URL") == null) {
 			log.log("Initialize error, please refer to value 'URL'");
 			System.exit(1);
 		}
 		URL = URL + ini.getValue("Server Info", "URL") + SUBADDRESS;
 		Connection conA = null;
-		System.out.println(URL);
 		try {
 			conA = AUtil.getDbConn(ini, "AgileDB");
 			String sql = "select "
