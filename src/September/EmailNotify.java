@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -39,11 +40,13 @@ public class EmailNotify {
 	AgileSessionFactory m_factory;
 	Properties props;
 	static HashMap<String, ArrayList<String>> usersMap = new HashMap<String, ArrayList<String>>();
-	static String URL = "<a href='";
 	static String SUBADDRESS = "action=OpenEmailObject&isFromNotf=true&module=ChangeHandler&classid=6000&objid=";
+	static String PSR = "action=OpenEmailObject&isFromNotf=true&module=PSRHandler&classid=4878&objid=";
+	static String QCR = "action=OpenEmailObject&isFromNotf=true&module=QCRHandler&classid=4928&objid=";
 	static Ini ini = new Ini();
 	static String USERNAME;
 	static String PASSWORD;
+	static LogIt log = new LogIt("BUG TRACKING");
 
 	public EmailNotify() {
 	}
@@ -53,22 +56,25 @@ public class EmailNotify {
 			EmailNotify en = new EmailNotify();
 			en.run();
 		} catch (Exception ex) {
-			System.out.println(ex);
+			log.log(ex);
 		}
 	}
 
 	private void run() throws Exception {
+		String filepath = ini.getValue("Settings", "log");
+		log.setLogFile(filepath);
+		log.log("LOG檔案建立時間: "+ new Date());
 		String username = ini.getValue("Server Info", "user");
 		String password = ini.getValue("Server Info", "password");
 		String connectString = ini.getValue("Server Info", "connectString");
 		EmailNotify.m_session = login(username, password, connectString);
 		if (m_session != null) {
-			System.out.println("Successfully logged in.");
+			log.log("Successfully logged in.");
 		}
 
-		System.out.println("initializing email properties");
+		log.log("initializing email properties");
 		props = initializeProperties();
-		System.out.println("properties initialized properly");
+		log.log("properties initialized properly");
 		boolean c1, c2, c3;
 		if (c1 = ini.getValue("Settings", "change").equalsIgnoreCase("yes")) {
 			getChangeTable(m_session, null);
@@ -80,7 +86,7 @@ public class EmailNotify {
 			getQCRTable(m_session, null);
 		}
 		if (c1 || c2 || c3) {
-			System.out.println("Sending mail");
+			log.log("Sending mail");
 			sendMail(props);
 		}
 	}
@@ -113,16 +119,16 @@ public class EmailNotify {
 			Iterator iter = usersMap.entrySet().iterator();
 			while (iter.hasNext()) {
 				Map.Entry pair = (Map.Entry) iter.next();
-				// System.out.println(pair.getKey() + " = " + pair.getValue());
+				// log.log(pair.getKey() + " = " + pair.getValue());
 				IUser user;
 				String key = (String) pair.getKey();
 				String userEmail = "william@anselm.com.tw";
 				try {
 					user = (IUser) m_session.getObject(UserConstants.CLASS_USER_BASE_CLASS, key);
 					userEmail = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
-					// System.out.println(userEmail);
+					// log.log(userEmail);
 				} catch (APIException e) {
-					System.out.println("user not found");
+					log.log("user not found");
 					e.printStackTrace();
 				}
 
@@ -172,14 +178,14 @@ public class EmailNotify {
 				}
 				message.setContent(email);
 				// replace wjhuang@ucsd.edu with userEmail
-				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
+				message.addRecipient(Message.RecipientType.TO, new InternetAddress("jane@anselm.com.tw"));
 				String username = ini.getValue("Admin Mail", "username");
 				String password = ini.getValue("Admin Mail", "password");
 				message.setFrom(new InternetAddress(username)); // 寄件者
 				transport.connect(username, password);
-				transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
-				System.out.println("Completed.");
-				System.exit(0);
+				//transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
+				log.log("Completed.");
+				
 				transport.close();
 
 			}
@@ -198,15 +204,15 @@ public class EmailNotify {
 	 */
 	public void getChangeTable(IAgileSession session, Map map) throws Exception {
 
-		LogIt log = new LogIt("");
 		log.log("Accessing database for Change");
 		if (ini.getValue("Server Info", "URL") == null) {
 			log.log("Initialize error, please refer to value 'URL'");
 			System.exit(1);
 		}
+		String URL = "<a href='";
 		URL = URL + ini.getValue("Server Info", "URL") + SUBADDRESS;
 		Connection conA = null;
-		System.out.println(URL);
+		log.log(URL);
 		try {
 			conA = AUtil.getDbConn(ini, "AgileDB");
 			String sql = "select "
@@ -263,15 +269,15 @@ public class EmailNotify {
 
 	public void getQCRTable(IAgileSession session, Map map) throws Exception {
 
-		LogIt log = new LogIt("");
 		log.log("Accessing database for QCR");
 		if (ini.getValue("Server Info", "URL") == null) {
 			log.log("Initialize error, please refer to value 'URL'");
 			System.exit(1);
 		}
-		URL = URL + ini.getValue("Server Info", "URL") + SUBADDRESS;
+		String URL = "<a href='";
+		URL = URL + ini.getValue("Server Info", "URL") + QCR;
 		Connection conA = null;
-		System.out.println(URL);
+		log.log(URL);
 		try {
 			conA = AUtil.getDbConn(ini, "AgileDB");
 			String sql = "select "
@@ -328,13 +334,13 @@ public class EmailNotify {
 
 	public void getPSRTable(IAgileSession session, Map map) throws Exception {
 
-		LogIt log = new LogIt("");
 		log.log("Accessing database for PSR");
 		if (ini.getValue("Server Info", "URL") == null) {
 			log.log("Initialize error, please refer to value 'URL'");
 			System.exit(1);
 		}
-		URL = URL + ini.getValue("Server Info", "URL") + SUBADDRESS;
+		String URL = "<a href='";
+		URL = URL + ini.getValue("Server Info", "URL") + PSR;
 		Connection conA = null;
 		try {
 			conA = AUtil.getDbConn(ini, "AgileDB");
