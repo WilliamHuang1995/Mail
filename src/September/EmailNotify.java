@@ -40,13 +40,13 @@ public class EmailNotify {
 	AgileSessionFactory m_factory;
 	Properties props;
 	static HashMap<String, ArrayList<String>> usersMap = new HashMap<String, ArrayList<String>>();
-	static String SUBADDRESS = "action=OpenEmailObject&isFromNotf=true&module=ChangeHandler&classid=6000&objid=";
-	static String PSR = "action=OpenEmailObject&isFromNotf=true&module=PSRHandler&classid=4878&objid=";
-	static String QCR = "action=OpenEmailObject&isFromNotf=true&module=QCRHandler&classid=4928&objid=";
+	static final String SUBADDRESS = "/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=ChangeHandler&classid=6000&objid=";
+	static final String PSR = "/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=PSRHandler&classid=4878&objid=";
+	static final String QCR = "/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=QCRHandler&classid=4928&objid=";
 	static Ini ini = new Ini();
 	static String USERNAME;
 	static String PASSWORD;
-	static LogIt log = new LogIt("BUG TRACKING");
+	static LogIt log = new LogIt("Log");
 
 	public EmailNotify() {
 	}
@@ -63,42 +63,68 @@ public class EmailNotify {
 	private void run() throws Exception {
 		String filepath = ini.getValue("Settings", "log");
 		log.setLogFile(filepath);
-		log.log("LOG檔案建立時間: "+ new Date());
-		String username = ini.getValue("Server Info", "user");
+		log.log("LOG檔案建立時間: " + new Date());
+		log.log("讀取username以及password...");
+		String username = ini.getValue("Server Info", "username");
 		String password = ini.getValue("Server Info", "password");
-		String connectString = ini.getValue("Server Info", "connectString");
-		EmailNotify.m_session = login(username, password, connectString);
-		if (m_session != null) {
-			log.log("Successfully logged in.");
+		String connectString = ini.getValue("Server Info", "URL");
+		log.log(1, "USER: " + username);
+		log.log(1, "PASS: " + password);
+		log.log(1, "URL : " + connectString);
+		log.log("嘗試登入...");
+		try {
+			EmailNotify.m_session = login(username, password, connectString);
+		} catch (APIException e) {
+			log.log(1, "登入失敗, 請確認[Server Info]裡的username, password, URL設定有正確");
+			System.exit(1);
 		}
-
-		log.log("initializing email properties");
+		if (m_session != null) {
+			log.log(1, "登入成功.");
+		}
 		props = initializeProperties();
-		log.log("properties initialized properly");
-		boolean c1, c2, c3;
-		if (c1 = ini.getValue("Settings", "change").equalsIgnoreCase("yes")) {
+		log.log("讀取 [Settings]");
+		// Check to see if needed to send ECO, PSR, QCR
+		String ini_change, ini_PSR, ini_QCR;
+		ini_change = ini.getValue("Settings", "change");
+		ini_PSR = ini.getValue("Settings", "psr");
+		ini_QCR = ini.getValue("Settings", "qcr");
+		log.log(1, "Change 設定為 " + ini_change);
+		log.log(1, "PSR 設定為 " + ini_PSR);
+		log.log(1, "QCR 設定為 " + ini_QCR);
+		boolean boolChange, boolPSR, boolQCR;
+		boolChange = ini_change.equalsIgnoreCase("yes");
+		boolPSR = ini_PSR.equalsIgnoreCase("yes");
+		boolQCR = ini_QCR.equalsIgnoreCase("yes");
+
+		if (boolChange) {
+			log.log("讀取CHANGE相關的未簽核資料");
 			getChangeTable(m_session, null);
 		}
-		if (c2 = ini.getValue("Settings", "psr").equalsIgnoreCase("yes")) {
+		if (boolPSR) {
+			log.log("讀取PSR相關的未簽核資料");
 			getPSRTable(m_session, null);
 		}
-		if (c3 = ini.getValue("Settings", "qcr").equalsIgnoreCase("yes")) {
+		if (boolQCR) {
+			log.log("讀取QCR相關的未簽核資料");
 			getQCRTable(m_session, null);
 		}
-		if (c1 || c2 || c3) {
-			log.log("Sending mail");
+		if (boolChange || boolPSR || boolQCR) {
 			sendMail(props);
+		} else {
+			log.log("由於Change,QCR,PSR都選擇了no,所以系統不發送郵件");
 		}
+		log.log("程式正常結束,無異常.\n");
 	}
 
 	private Properties initializeProperties() {
 		Properties props = new Properties();
 		try {
-
-			// 初始設定，username 和 password 非必要
 			String transportProtocol = ini.getValue("Admin Mail", "transport protocol");
 			String host = ini.getValue("Admin Mail", "host");
 			String protocolPort = ini.getValue("Admin Mail", "protocol port");
+			log.log(1, "Transport Protocol: " + transportProtocol);
+			log.log(1, "Mail host         : " + host);
+			log.log(1, "Protocol Port     : " + protocolPort);
 			props.setProperty("mail.transport.protocol", transportProtocol);
 			props.setProperty("mail.host", host);
 			props.setProperty("mail.protocol.port", protocolPort);
@@ -106,9 +132,33 @@ public class EmailNotify {
 
 		} catch (Exception e) {
 			e.printStackTrace();
+			log.log("系統在設定寄件性能時出錯,請確認[Admin Mail]裡的設定都是正確再重試");
 			System.exit(1);
 		}
 		return props;
+	}
+
+	private static void testRunMail(String username, String password, Properties props) {
+		Session mailSession = Session.getDefaultInstance(props, null);
+		log.log("測試是否能連接到MAIL SERVER");
+		try {
+			log.log(1,"Email: "+ username);
+			log.log(1,"Password: "+ password);
+			Transport transport = mailSession.getTransport();
+			transport.connect(username, password);
+			transport.close();
+			
+			
+			log.log("成功連接MAIL");
+
+		} catch (NoSuchProviderException e) {
+			log.log("登入失敗,請查看 [Admin Mail] 的前3項是否正確");
+			System.exit(1);
+		} catch (MessagingException e) {
+			log.log("登入失敗,請查看 [Admin Mail] 的設定是否正確");
+			System.exit(1);
+		}
+
 	}
 
 	private static void sendMail(Properties props) {
@@ -117,6 +167,10 @@ public class EmailNotify {
 			String logo = ini.getValue("Settings", "logo");
 			boolean useLogo = logo.equalsIgnoreCase("yes");
 			Iterator iter = usersMap.entrySet().iterator();
+			String username = ini.getValue("Admin Mail", "username");
+			String password = ini.getValue("Admin Mail", "password");
+			testRunMail(username, password, props);
+			log.log("開始發送郵件通知相關人員");
 			while (iter.hasNext()) {
 				Map.Entry pair = (Map.Entry) iter.next();
 				// log.log(pair.getKey() + " = " + pair.getValue());
@@ -147,8 +201,6 @@ public class EmailNotify {
 				MimeBodyPart textPart = new MimeBodyPart();
 				StringBuffer html = new StringBuffer();
 
-				// html.append("\n<a
-				// href='http://192.168.13.250:7001/Agile/'>Agile PLM</a>");
 				html.append("<!DOCTYPE html><html><head><style>" + "table,th,td{border: 1px solid black; }"
 						+ "td,th{text-align:center;}" + "h3 {color: maroon;margin-left: 80px;}"
 						+ "</style></head><body>");
@@ -178,14 +230,14 @@ public class EmailNotify {
 				}
 				message.setContent(email);
 				// replace wjhuang@ucsd.edu with userEmail
-				message.addRecipient(Message.RecipientType.TO, new InternetAddress("jane@anselm.com.tw"));
-				String username = ini.getValue("Admin Mail", "username");
-				String password = ini.getValue("Admin Mail", "password");
+				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
 				message.setFrom(new InternetAddress(username)); // 寄件者
+
 				transport.connect(username, password);
-				//transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
-				log.log("Completed.");
-				
+				// transport.sendMessage(message,
+				// message.getRecipients(Message.RecipientType.TO));
+				log.log("郵件成功發送給: " + userEmail);
+
 				transport.close();
 
 			}
@@ -203,171 +255,112 @@ public class EmailNotify {
 	 * 郵件內容需包括一個表格，表頭欄位為：表單編號(可超連結)、表單描述、站別、已持續時間(天)
 	 */
 	public void getChangeTable(IAgileSession session, Map map) throws Exception {
-
-		log.log("Accessing database for Change");
 		if (ini.getValue("Server Info", "URL") == null) {
-			log.log("Initialize error, please refer to value 'URL'");
+			log.log("請確定 [Server Info] 裡的　URL　有填寫再重新跑一次");
 			System.exit(1);
 		}
 		String URL = "<a href='";
 		URL = URL + ini.getValue("Server Info", "URL") + SUBADDRESS;
 		Connection conA = null;
-		log.log(URL);
-		try {
-			conA = AUtil.getDbConn(ini, "AgileDB");
-			String sql = "select "
-					+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
-					+ ", round((sysdate-w.last_upd),2)  DAYS 			"
-					+ ", s.user_name_assigned   		USER_NAME 		"
-					+ ", usr.loginid 					USER_ACCOUNT	"
-					+ ", n3.description 				CHANGE_TYPE 	"
-					+ ", c.change_number 				CHANGE_NUMBER 	"
-					+ ", s.last_upd 					LAST_UPD 		"
-					+ ", n1.description 				STATUS_FROM		"
-					+ ", n2.description 				STATUS_TO 		"
-					+ ", c.description 					CHANGE_DESC 	"
-					+ ", s.id, s.change_id, s.process_id, s.user_assigned "
-					+ "from signoff s, change c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "
-					+ "where " + "  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "
-					+ "  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "
-					+ "and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "
-					+ "order by days desc, s.last_upd desc";
-			ResultSet rs = conA.createStatement().executeQuery(sql);
-			ResultSetMetaData rsmd = rs.getMetaData();
-			int numCols = rsmd.getColumnCount();
-			// for (int i = 1; i <= numCols; i++)
-			// log.log(rsmd.getColumnName(i) + " " + i);
-			while (rs.next()) {
-				HashMap<String, String> datarow = new HashMap<String, String>();
-				String user = rs.getString(4);
-				String changeNumber = rs.getString(6);
-				String changeType = rs.getString(5);
-				String changeDesc = rs.getString(10);
-				String status = rs.getString(8);
-				String duration = rs.getString(1);
-				String changeID = rs.getString(12);
-				if (usersMap.containsKey(user)) {
-					ArrayList<String> list = usersMap.get(user);
-					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
-							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
-							+ duration + "</td></tr>");
-					usersMap.put(user, list);
-				} else {
-					ArrayList<String> list = new ArrayList<String>();
-					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
-							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
-							+ duration + "</td></tr>");
-					usersMap.put(user, list);
-				}
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+		log.log("嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
+		conA = AUtil.getDbConn(ini, "AgileDB");
+		String sql = "select "
+				+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
+				+ ", round((sysdate-w.last_upd),2)  DAYS 			"
+				+ ", s.user_name_assigned   		USER_NAME 		"
+				+ ", usr.loginid 					USER_ACCOUNT	"
+				+ ", n3.description 				CHANGE_TYPE 	"
+				+ ", c.change_number 				CHANGE_NUMBER 	"
+				+ ", s.last_upd 					LAST_UPD 		"
+				+ ", n1.description 				STATUS_FROM		"
+				+ ", n2.description 				STATUS_TO 		"
+				+ ", c.description 					CHANGE_DESC 	"
+				+ ", s.id, s.change_id, s.process_id, s.user_assigned "
+				+ "from signoff s, change c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "
+				+ "where " + "  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "
+				+ "  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "
+				+ "and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "
+				+ "order by days desc, s.last_upd desc";
+		runSQL(conA, sql, URL);
+		log.log("成功讀取資料與database短線中．．．");
 		conA.close();
-		log.log("Agile DB Closed.");
+
 	}
 
 	public void getQCRTable(IAgileSession session, Map map) throws Exception {
 
 		log.log("Accessing database for QCR");
 		if (ini.getValue("Server Info", "URL") == null) {
-			log.log("Initialize error, please refer to value 'URL'");
+			log.log("請確定 [Server Info] 裡的　URL　有填寫再重新跑一次");
 			System.exit(1);
 		}
 		String URL = "<a href='";
 		URL = URL + ini.getValue("Server Info", "URL") + QCR;
 		Connection conA = null;
-		log.log(URL);
-		try {
-			conA = AUtil.getDbConn(ini, "AgileDB");
-			String sql = "select "
-					+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
-					+ ", round((sysdate-w.last_upd),2)  DAYS 			"
-					+ ", s.user_name_assigned   		USER_NAME 		"
-					+ ", usr.loginid 					USER_ACCOUNT	"
-					+ ", n3.description 				CHANGE_TYPE 	"
-					+ ", c.QCR_NUMBER					CHANGE_NUMBER 	"
-					+ ", s.last_upd 					LAST_UPD 		"
-					+ ", n1.description 				STATUS_FROM		"
-					+ ", n2.description 				STATUS_TO 		"
-					+ ", c.description 					CHANGE_DESC 	"
-					+ ", s.id, s.change_id, s.process_id, s.user_assigned "
-					+ "from signoff s, qcr c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "
-					+ "where " + "  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "
-					+ "  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "
-					+ "and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "
-					+ "order by days desc, s.last_upd desc";
-			ResultSet rs = conA.createStatement().executeQuery(sql);
-			ResultSetMetaData rsmd = rs.getMetaData();
-			int numCols = rsmd.getColumnCount();
-			// for (int i = 1; i <= numCols; i++)
-			// log.log(rsmd.getColumnName(i) + " " + i);
-			while (rs.next()) {
-				HashMap<String, String> datarow = new HashMap<String, String>();
-				String user = rs.getString(4);
-				String changeNumber = rs.getString(6);
-				String changeType = rs.getString(5);
-				String changeDesc = rs.getString(10);
-				String status = rs.getString(8);
-				String duration = rs.getString(1);
-				String changeID = rs.getString(12);
-				if (usersMap.containsKey(user)) {
-					ArrayList<String> list = usersMap.get(user);
-					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
-							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
-							+ duration + "</td></tr>");
-					usersMap.put(user, list);
-				} else {
-					ArrayList<String> list = new ArrayList<String>();
-					list.add("<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
-							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
-							+ duration + "</td></tr>");
-					usersMap.put(user, list);
-				}
-			}
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+		log.log("嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
+		conA = AUtil.getDbConn(ini, "AgileDB");
+		String sql = "select "
+				+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
+				+ ", round((sysdate-w.last_upd),2)  DAYS 			"
+				+ ", s.user_name_assigned   		USER_NAME 		"
+				+ ", usr.loginid 					USER_ACCOUNT	"
+				+ ", n3.description 				CHANGE_TYPE 	"
+				+ ", c.QCR_NUMBER					CHANGE_NUMBER 	"
+				+ ", s.last_upd 					LAST_UPD 		"
+				+ ", n1.description 				STATUS_FROM		"
+				+ ", n2.description 				STATUS_TO 		"
+				+ ", c.description 					CHANGE_DESC 	"
+				+ ", s.id, s.change_id, s.process_id, s.user_assigned "
+				+ "from signoff s, qcr c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "
+				+ "where " + "  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "
+				+ "  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "
+				+ "and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "
+				+ "order by days desc, s.last_upd desc";
+		runSQL(conA, sql, URL);
+		log.log("成功讀取資料與database短線中．．．");
 		conA.close();
-		log.log("Agile DB Closed.");
+
 	}
 
 	public void getPSRTable(IAgileSession session, Map map) throws Exception {
 
 		log.log("Accessing database for PSR");
 		if (ini.getValue("Server Info", "URL") == null) {
-			log.log("Initialize error, please refer to value 'URL'");
+			log.log("請確定 [Server Info] 裡的　URL　有填寫再重新跑一次");
 			System.exit(1);
 		}
 		String URL = "<a href='";
 		URL = URL + ini.getValue("Server Info", "URL") + PSR;
 		Connection conA = null;
+		log.log("嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
+		conA = AUtil.getDbConn(ini, "AgileDB");
+		String sql = "select "
+				+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
+				+ ", round((sysdate-w.last_upd),2)  DAYS 			"
+				+ ", s.user_name_assigned   		USER_NAME 		"
+				+ ", usr.loginid 					USER_ACCOUNT	"
+				+ ", n3.description 				CHANGE_TYPE 	"
+				+ ", c.PSR_NO		 				CHANGE_NUMBER 	"
+				+ ", s.last_upd 					LAST_UPD 		"
+				+ ", n1.description 				STATUS_FROM		"
+				+ ", n2.description 				STATUS_TO 		"
+				+ ", c.description 					CHANGE_DESC 	"
+				+ ", s.id, s.change_id, s.process_id, s.user_assigned "
+				+ "from signoff s, psr c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "
+				+ "where " + "  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "
+				+ "  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "
+				+ "and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "
+				+ "order by days desc, s.last_upd desc";
+		runSQL(conA, sql, URL);
+		log.log("成功讀取資料與database短線中．．．");
+		conA.close();
+
+	}
+
+	public void runSQL(Connection conA, String sql, String URL) {
 		try {
-			conA = AUtil.getDbConn(ini, "AgileDB");
-			String sql = "select "
-					+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
-					+ ", round((sysdate-w.last_upd),2)  DAYS 			"
-					+ ", s.user_name_assigned   		USER_NAME 		"
-					+ ", usr.loginid 					USER_ACCOUNT	"
-					+ ", n3.description 				CHANGE_TYPE 	"
-					+ ", c.PSR_NO		 				CHANGE_NUMBER 	"
-					+ ", s.last_upd 					LAST_UPD 		"
-					+ ", n1.description 				STATUS_FROM		"
-					+ ", n2.description 				STATUS_TO 		"
-					+ ", c.description 					CHANGE_DESC 	"
-					+ ", s.id, s.change_id, s.process_id, s.user_assigned "
-					+ "from signoff s, psr c, workflow_process w, nodetable n1, nodetable n2, agileuser usr, nodetable n3 "
-					+ "where " + "  s.signoff_status=0 and c.delete_flag is null and s.change_id=c.id "
-					+ "  and c.process_id=s.process_id and w.id=c.process_id and c.subclass=n3.id "
-					+ "and w.state=n1.id and w.next_state=n2.id and usr.id=s.user_assigned "
-					+ "order by days desc, s.last_upd desc";
 			ResultSet rs = conA.createStatement().executeQuery(sql);
-			ResultSetMetaData rsmd = rs.getMetaData();
-			int numCols = rsmd.getColumnCount();
-			// for (int i = 1; i <= numCols; i++)
-			// log.log(rsmd.getColumnName(i) + " " + i);
 			while (rs.next()) {
-				HashMap<String, String> datarow = new HashMap<String, String>();
 				String user = rs.getString(4);
 				String changeNumber = rs.getString(6);
 				String changeType = rs.getString(5);
@@ -390,11 +383,9 @@ public class EmailNotify {
 				}
 			}
 		} catch (Exception e) {
-			e.printStackTrace();
-
+			log.log("執行SQL時遇到問題,請確認 [AgileDB] 的設定正確");
+			System.exit(1);
 		}
-		conA.close();
-		log.log("Agile DB Closed.");
 	}
 
 	/*
