@@ -1,8 +1,8 @@
 package September;
 
+import java.io.UnsupportedEncodingException;
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -33,6 +33,7 @@ import com.agile.api.UserConstants;
 import com.anselm.plm.util.AUtil;
 import com.anselm.plm.utilobj.Ini;
 import com.anselm.plm.utilobj.LogIt;
+import util.WebClient;
 
 public class EmailNotify {
 	static IAgileSession m_session;
@@ -73,7 +74,7 @@ public class EmailNotify {
 		log.log(1, "URL : " + connectString);
 		log.log("嘗試登入...");
 		try {
-			EmailNotify.m_session = login(username, password, connectString);
+			EmailNotify.m_session = WebClient.getAgileSession(username, password, connectString);
 		} catch (APIException e) {
 			log.log(1, "登入失敗, 請確認[Server Info]裡的username, password, URL設定有正確");
 			System.exit(1);
@@ -142,13 +143,12 @@ public class EmailNotify {
 		Session mailSession = Session.getDefaultInstance(props, null);
 		log.log("測試是否能連接到MAIL SERVER");
 		try {
-			log.log(1,"Email: "+ username);
-			log.log(1,"Password: "+ password);
+			log.log(1, "Email: " + username);
+			log.log(1, "Password: " + password);
 			Transport transport = mailSession.getTransport();
 			transport.connect(username, password);
 			transport.close();
-			
-			
+
 			log.log("成功連接MAIL");
 
 		} catch (NoSuchProviderException e) {
@@ -195,9 +195,16 @@ public class EmailNotify {
 				String subject = "Agile PLM: Changes that still need your approval";
 				if (ini.getValue("Admin Mail", "subject") != null) {
 					subject = ini.getValue("Admin Mail", "subject");
+					try {
+						System.out.println(subject);
+						subject = new String(subject.getBytes("UTF-8"),"UTF-8");
+						System.out.println(subject);
+					} catch (UnsupportedEncodingException e) {
+						e.printStackTrace();
+					}
 				}
 
-				message.setSubject(subject, "UTF-8");
+				message.setSubject(subject, "utf-8");
 				MimeBodyPart textPart = new MimeBodyPart();
 				StringBuffer html = new StringBuffer();
 
@@ -232,14 +239,11 @@ public class EmailNotify {
 				// replace wjhuang@ucsd.edu with userEmail
 				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
 				message.setFrom(new InternetAddress(username)); // 寄件者
-
 				transport.connect(username, password);
-				// transport.sendMessage(message,
-				// message.getRecipients(Message.RecipientType.TO));
+				transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
 				log.log("郵件成功發送給: " + userEmail);
-
 				transport.close();
-
+				System.exit(0);
 			}
 		} catch (AddressException e) {
 			e.printStackTrace();
@@ -386,28 +390,5 @@ public class EmailNotify {
 			log.log("執行SQL時遇到問題,請確認 [AgileDB] 的設定正確");
 			System.exit(1);
 		}
-	}
-
-	/*
-	 * Creating a session and logging in This is sample code provided by Oracle
-	 */
-	private IAgileSession login(String username, String password, String connectString) throws APIException {
-
-		// Create the params variable to hold login parameters
-		HashMap params = new HashMap();
-
-		// Put username and password values into params
-		params.put(AgileSessionFactory.USERNAME, username);
-		params.put(AgileSessionFactory.PASSWORD, password);
-
-		// Get an Agile server instance. ("agileserver" is the name of the Agile
-		// proxy server,
-		// and "virtualPath" is the name of the virtual path used for the Agile
-		// system.)
-		m_factory = AgileSessionFactory.getInstance(connectString);
-
-		// Create the Agile PLM session and log in
-		return m_factory.createSession(params);
-
 	}
 }
