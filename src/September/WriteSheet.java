@@ -4,8 +4,12 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -22,7 +26,20 @@ import com.anselm.plm.utilobj.Ini;
 public class WriteSheet {
 
 	public static void main(String[] args) throws Exception {
-		System.out.println(StringUtils.difference("[user1,user2,user3]", "[user1,user2,user3,user4]"));
+		String str = "Administrator, admin (admin);Gabriele Braga, Arrow Electronics (1ae001.01);Julie Fozard, Channel One Limited (1co001.01)";
+		String str2 = "Administrator, admin (admin);Gabriele Braga, Arrow Electronics (1ae001.01);Julie Fozard, Channel One Limited (1co001.01);Pang, Philip, Avnet Electronics Marketing Australia (1ae002.01)";
+		ArrayList<String> oldValue = new ArrayList(Arrays.asList(str.split("\\s*;\\s*")));
+		ArrayList<String> newValue = new ArrayList<String>(Arrays.asList(str2.split("\\s*;\\s*")));
+		newValue.removeAll(oldValue);
+		System.out.println(oldValue);
+		System.out.println(newValue);
+		Iterator<String> it = newValue.iterator();
+		while(it.hasNext()){
+			String user= it.next();
+			String userID = user.substring(user.lastIndexOf("(")+1,user.lastIndexOf(")"));
+			System.out.println(userID);
+		}
+		
 
 		Date today = new Date();
 		SimpleDateFormat format = new SimpleDateFormat("MMdd");
@@ -54,13 +71,13 @@ public class WriteSheet {
 		// This data needs to be written (Object[])
 		Map<String, Object[]> empinfo = new TreeMap<String, Object[]>();
 		if(!exists){
-			empinfo.put("1", new Object[] { "User ID", "Email", "Name", "Project Name" });
+			empinfo.put("1", new Object[] { "User Role", "Email","Project Name" });
 		}
-		empinfo.put("2", new Object[] { "tp01", "a@a.com", "Gopal", "Technical Manager" });
-		empinfo.put("3", new Object[] { "tp02", "b@b.com", "Manisha", "Proof Reader" });
-		empinfo.put("4", new Object[] { "tp03", "c@c.com", "Masthan", "Technical Writer" });
-		empinfo.put("5", new Object[] { "tp04", "d@d.com", "Satish", "Technical Writer" });
-		empinfo.put("6", new Object[] { "tp05", "e@e.com", "Krishna", "Technical Writer" });
+		empinfo.put("2", new Object[] { "ME", "a@a.com", "Technical Manager" });
+		empinfo.put("3", new Object[] { "EE", "b@b.com", "Proof Reader" });
+		empinfo.put("4", new Object[] { "PM", "c@c.com", "Technical Writer" });
+		empinfo.put("5", new Object[] { "BIOS", "d@d.com", "Technical Writer" });
+		empinfo.put("6", new Object[] { "DQA", "e@e.com", "Technical Writer" });
 		// Iterate over data and write to sheet
 		Set<String> keyid = empinfo.keySet();
 		for (String key : keyid) {
