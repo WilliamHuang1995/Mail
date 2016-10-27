@@ -3,12 +3,29 @@ package September;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.Properties;
+
+import javax.activation.DataHandler;
+import javax.activation.FileDataSource;
+import javax.mail.Message;
+import javax.mail.MessagingException;
+import javax.mail.Multipart;
+import javax.mail.NoSuchProviderException;
+import javax.mail.Session;
+import javax.mail.Transport;
+import javax.mail.internet.AddressException;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeBodyPart;
+import javax.mail.internet.MimeMessage;
+import javax.mail.internet.MimeMultipart;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -44,6 +61,7 @@ public class EmailNotifyPPMChange {
 	private static String password;
 	private static String connectString;
 	private static HashMap<String,User> userList = new HashMap<String,User>();
+	private static Properties props;
 
 	public EmailNotifyPPMChange() {
 		ini = new Ini();
@@ -63,6 +81,9 @@ public class EmailNotifyPPMChange {
 			log.log("can't find file");
 			System.exit(1);
 		}
+		
+		//initialize email properties
+		props = initializeProperties();
 	}
 
 	public static void main(String[] args) {
@@ -115,6 +136,7 @@ public class EmailNotifyPPMChange {
 				}
 			}
 			
+			sendMail(props);
 			fis.close();
 			
 			
@@ -123,6 +145,122 @@ public class EmailNotifyPPMChange {
 		} catch (APIException | IOException e) {
 			e.printStackTrace();
 			System.exit(1);
+		}
+
+	}
+	private Properties initializeProperties() {
+		Properties props = new Properties();
+		try {
+			String transportProtocol = ini.getValue("Admin Mail", "transport protocol");
+			String host = ini.getValue("Admin Mail", "host");
+			String protocolPort = ini.getValue("Admin Mail", "protocol port");
+			log.log(1, "Transport Protocol: " + transportProtocol);
+			log.log(1, "Mail host         : " + host);
+			log.log(1, "Protocol Port     : " + protocolPort);
+			props.setProperty("mail.transport.protocol", transportProtocol);
+			props.setProperty("mail.host", host);
+			props.setProperty("mail.protocol.port", protocolPort);
+			props.setProperty("mail.smtp.auth", "true");
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			log.log("系統在設定寄件性能時出錯,請確認[Admin Mail]裡的設定都是正確再重試");
+			System.exit(1);
+		}
+		return props;
+	}
+
+	private static void testRunMail(String username, String password, Properties props) {
+		Session mailSession = Session.getDefaultInstance(props, null);
+		log.log("測試是否能連接到MAIL SERVER");
+		try {
+			log.log(1, "Email: " + username);
+			log.log(1, "Password: " + password);
+			Transport transport = mailSession.getTransport();
+			transport.connect(username, password);
+			transport.close();
+
+			log.log("成功連接MAIL");
+
+		} catch (NoSuchProviderException e) {
+			log.log("登入失敗,請查看 [Admin Mail] 的前3項是否正確");
+			System.exit(1);
+		} catch (MessagingException e) {
+			log.log("登入失敗,請查看 [Admin Mail] 的設定是否正確");
+			System.exit(1);
+		}
+
+	}
+
+	private static void sendMail(Properties props) {
+		try {
+			// determine if config wants logo
+			String logo = ini.getValue("Settings", "logo");
+			boolean useLogo = logo.equalsIgnoreCase("yes");
+			
+			String username = ini.getValue("Admin Mail", "username");
+			String password = ini.getValue("Admin Mail", "password");
+			testRunMail(username, password, props);
+			Iterator iter = userList.entrySet().iterator();
+			log.log("開始發送郵件通知相關人員");
+			while (iter.hasNext()) {
+				Map.Entry pair = (Map.Entry) iter.next();
+				log.log(pair.getKey());
+				log.log(pair.getValue().toString());
+				IUser user;
+				String key = (String) pair.getKey();
+				String userEmail = "william@anselm.com.tw";
+
+				Session mailSession = Session.getDefaultInstance(props, null);
+				Transport transport = mailSession.getTransport();
+				// 產生整封 email 的主體 message
+				MimeMessage message = new MimeMessage(mailSession);
+
+				// 設定主旨
+				String subject = "New Changes in your role in Project";
+				message.setSubject(subject, "utf-8");
+				MimeBodyPart textPart = new MimeBodyPart();
+				StringBuffer html = new StringBuffer();
+
+				html.append("<!DOCTYPE html><html><head><style>" + "table,th,td{border: 1px solid black; }"
+						+ "td,th{text-align:center;}" + "h3 {color: maroon;margin-left: 80px;}"
+						+ "</style></head><body>");
+				html.append("<h3>您的PLM角色有變更</h3>");
+				if (useLogo) {
+					html.append("<img src='cid:image'/><br>");
+				}
+				
+				html.append("</table></body></html>");
+				textPart.setContent(html.toString(), "text/html; charset=UTF-8");
+				
+				Multipart email = new MimeMultipart();
+				email.addBodyPart(textPart);
+				// Oracle Logo
+				if (useLogo) {
+					MimeBodyPart picturePart = new MimeBodyPart();
+					FileDataSource fds = new FileDataSource("logo.png");
+					picturePart.setDataHandler(new DataHandler(fds));
+					picturePart.setFileName(fds.getName());
+					picturePart.setHeader("Content-ID", "<image>");
+					email.addBodyPart(picturePart);
+				}
+				message.setContent(email);
+				// replace wjhuang@ucsd.edu with userEmail
+				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
+				message.setFrom(new InternetAddress(username)); // 寄件者
+				transport.connect(username, password);
+				//transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
+				log.log("郵件成功發送給: " + userEmail);
+				transport.close();
+				
+				
+			}
+		} catch (AddressException e) {
+			e.printStackTrace();
+		} catch (NoSuchProviderException e) {
+			e.printStackTrace();
+		} catch (MessagingException e) {
+			e.printStackTrace();
 		}
 
 	}
@@ -164,9 +302,10 @@ public class EmailNotifyPPMChange {
 			projects.put(project, URL);
 		}
 		@Override
-		public String toString(){
-			return name+" "+userID;
+		public String toString() {
+			return this.getName()+" "+this.getUserID();
 		}
+		
 		
 	}
 }
