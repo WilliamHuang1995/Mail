@@ -115,9 +115,9 @@ public class EmailNotifyPPMChange {
 				String name = cellIterator.next().getStringCellValue();// name
 				String userID = cellIterator.next().getStringCellValue();// userid
 				String email = cellIterator.next().getStringCellValue();// email
-				String programName = cellIterator.next().getStringCellValue();// project
-																				// name
+				String programName = cellIterator.next().getStringCellValue();// project name
 				String URL = cellIterator.next().getStringCellValue();// url
+				String assignedBy = cellIterator.next().getStringCellValue();//assigned by
 
 				// Check if user is the current updated.
 				IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, programName);
@@ -126,12 +126,12 @@ public class EmailNotifyPPMChange {
 
 				// if user currently is in the role
 				if (StringUtils.contains(userInCell, userID)) {
-					log.log(name + " is currently the assigned user in role: " + role + " for Project: " + programName);
+					log.log(name + " is currently the assigned user in role: " + role + " for Project: " + programName +"Assigned by: "+assignedBy);
 					if (userList.get(name) != null) {
 						User user = userList.get(name);
-						user.addNewProject(programName, URL);
+						user.addNewProject(programName, URL, assignedBy);
 					} else {
-						User user = new User(name, userID, email, programName, URL);
+						User user = new User(name, userID, email, programName, URL, assignedBy);
 						userList.put(name, user);
 					}
 				}
@@ -227,7 +227,7 @@ public class EmailNotifyPPMChange {
 					html.append("<img src='cid:image'/><br>");
 				}
 
-				html.append("<table><tr><td>Project Name</td><td>Project ID</td><td>Link</td></tr>");
+				html.append("<table><tr><td>Project Name</td><td>Project ID</td><td>Link</td><td>Assigned By</td></tr>");
 				html.append(pair.getValue());
 				html.append("</table></body></html>");
 				html.append("<p>Sincerely,</p><p></p><p>Your Agile PLM Administrator</p>");
@@ -268,19 +268,17 @@ public class EmailNotifyPPMChange {
 		private String name;
 		private String userID;
 		private String email;
-		private HashMap<String, String> projects = new HashMap<String, String>(); // project
-																					// and
-																					// link
+		private HashMap<String, String[]> projects = new HashMap<String, String[]>(); // project and link
 
 		public User() {
 
 		}
 
-		public User(String name, String userID, String email, String project, String URL) {
+		public User(String name, String userID, String email, String project, String URL, String assignedBy) {
 			this.setName(name);
 			this.setEmail(email);
 			this.setUserID(userID);
-			projects.put(project, URL);
+			projects.put(project, new String[]{URL,assignedBy});
 		}
 
 		public String getName() {
@@ -307,8 +305,8 @@ public class EmailNotifyPPMChange {
 			this.email = email;
 		}
 
-		public void addNewProject(String project, String URL) {
-			projects.put(project, URL);
+		public void addNewProject(String project, String URL, String assignedBy) {
+			projects.put(project, new String[]{URL,assignedBy});
 		}
 
 		@Override
@@ -323,11 +321,10 @@ public class EmailNotifyPPMChange {
 					IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, pair.getKey());
 					projectName = (String) program.getValue(ProgramConstants.ATT_GENERAL_INFO_NAME);
 				} catch (APIException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 				toReturn = toReturn + "<tr><td>" + projectName + "</td><td>" + pair.getKey() + "</td><td><a href="
-						+ pair.getValue() + ">Link to address</a></td></tr>";
+						+ ((String[])pair.getValue())[0] + ">Link to project</a></td><td>"+((String[])pair.getValue())[1]+"</td></tr>";
 			}
 
 			return toReturn;

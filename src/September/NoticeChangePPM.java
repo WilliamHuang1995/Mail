@@ -60,6 +60,7 @@ public class NoticeChangePPM implements IEventAction {
 	private String fileLocation;
 	private IAgileSession session;
 	ArrayList<String> roleList;
+	private String currentUser;
 
 	/*
 	 * Constructor
@@ -77,9 +78,6 @@ public class NoticeChangePPM implements IEventAction {
 		try {
 			log.setLogFile(ini.getValue("File Location", "LOG_FILE_PATH") + format.format(today) + ".log");
 
-			// initialize workbook as well
-			rowcount = initializeWorkbook(checkExist(), fileLocation, filename);
-
 		} catch (Exception e) {
 
 			e.printStackTrace();
@@ -88,6 +86,9 @@ public class NoticeChangePPM implements IEventAction {
 		// Initialize role list
 		String roleFromConfig = ini.getValue("Settings", "role");
 		roleList = new ArrayList<String>(Arrays.asList(roleFromConfig.split("\\s*,\\s*")));
+		
+		//Initialize current user
+		currentUser = "Unknown";
 
 	}
 
@@ -100,20 +101,25 @@ public class NoticeChangePPM implements IEventAction {
 	// and error if it exists.
 	public EventActionResult doAction(IAgileSession session, INode actionNode, IEventInfo event) {
 
-		// The event is an update event
-		IUpdateEventInfo info = (IUpdateEventInfo) event;
-		// get admin session
-		session = AUtil.getAgileSession(ini, "AgileAP");
-
-		// to be frank, the starting index does not matter.
-		int mappingIndex = 1;
-		Map<String, Object[]> empinfo = new TreeMap<String, Object[]>();
-		if (checkExist()) {
-			empinfo.put(mappingIndex + "",
-					new Object[] { "User Role", "List/MultiList", "Name", "Email", "Project Name", "Project Link" });
-		}
-
 		try {
+			// The event is an update event
+			IUpdateEventInfo info = (IUpdateEventInfo) event;
+
+			// Get current user
+			IUser sessionUser = session.getCurrentUser();
+			currentUser = (String) sessionUser.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
+			
+			// get admin session
+			session = AUtil.getAgileSession(ini, "AgileAP");
+
+			// to be frank, the starting index does not matter.
+			int mappingIndex = 1;
+			Map<String, Object[]> empinfo = new TreeMap<String, Object[]>();
+			if (!checkExist()) {
+				empinfo.put(mappingIndex + "",
+						new Object[] { "User Role", "Name", "user.id", "Email", "Project Name", "Project Link", "Assigned By" });
+			}
+
 			IEventDirtyCell[] cells = info.getCells();
 			IProgram program = (IProgram) session.getObject(info.getDataObject().getAgileClass(),
 					info.getDataObject().getName());
@@ -141,18 +147,26 @@ public class NoticeChangePPM implements IEventAction {
 						IUser user = (IUser) session.getObject(IUser.OBJECT_TYPE, userID);
 						String userEmail = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
 						String userName = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
-						String dataType = cleanCell.getDataType() == 4 ? "Single List" : "Multi List";
+						//String dataType = cleanCell.getDataType() == 4 ? "Single List" : "Multi List";
 						log.log(userName);
 						log.log(userEmail);
 						log.log(attributeName + " " + userName + " " + userEmail + " " + program.getName());
-						empinfo.put(++mappingIndex + "", new Object[] { attributeName, dataType, userName, userEmail,
-								program.getName(), ini.getValue("Server Info", "url") + URL + objID });
+						empinfo.put(++mappingIndex + "", new Object[] { attributeName, userName, userID, userEmail,
+								program.getName(), ini.getValue("Server Info", "url") + URL + objID, currentUser });
 					}
 				}
 			}
 
 			Set<String> keyid = empinfo.keySet();
+			if (keyid.size() == 0) {
+				log.log("No changes to roles made, exiting");
+				log.close();
+				return new EventActionResult(event, new ActionResult(ActionResult.NORESULT, null));
 
+			}
+
+			// initialize workbook
+			rowcount = initializeWorkbook(checkExist(), fileLocation, filename);
 			for (String key : keyid) {
 				HSSFRow row = spreadsheet.createRow(rowcount++);
 				Object[] objectArr = empinfo.get(key);
@@ -162,6 +176,7 @@ public class NoticeChangePPM implements IEventAction {
 					cell.setCellValue((String) obj);
 				}
 			}
+			// initialize workbook as well
 
 			// Write the workbook in file system
 			try {
@@ -174,12 +189,8 @@ public class NoticeChangePPM implements IEventAction {
 			}
 
 		}
-		// file:///C:/Users/user/Downloads/933_SDK_Samples/sdk/documentation/html/interfacecom_1_1agile_1_1px_1_1IUpdateTitleBlockEventInfo.html
-		// file:///C:/Users/user/Downloads/933_SDK_Samples/sdk/documentation/html/interfacecom_1_1agile_1_1px_1_1IEventDirtyCell.html
 
-		catch (
-
-		APIException e) {
+		catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
