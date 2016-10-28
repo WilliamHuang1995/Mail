@@ -43,6 +43,7 @@ import com.agile.api.IProgram;
 import com.agile.api.IProject;
 import com.agile.api.ITable;
 import com.agile.api.IUser;
+import com.agile.api.ProgramConstants;
 import com.agile.api.TableTypeConstants;
 import com.agile.api.UserConstants;
 import com.anselm.plm.utilobj.Ini;
@@ -60,7 +61,7 @@ public class EmailNotifyPPMChange {
 	private static String username;
 	private static String password;
 	private static String connectString;
-	private static HashMap<String,User> userList = new HashMap<String,User>();
+	private static HashMap<String, User> userList = new HashMap<String, User>();
 	private static Properties props;
 
 	public EmailNotifyPPMChange() {
@@ -81,66 +82,63 @@ public class EmailNotifyPPMChange {
 			log.log("can't find file");
 			System.exit(1);
 		}
-		
-		//initialize email properties
+
+		// initialize email properties
 		props = initializeProperties();
 	}
 
 	public static void main(String[] args) {
-		//Initialize
+		// Initialize
 		EmailNotifyPPMChange ini = new EmailNotifyPPMChange();
 		try {
 			session = WebClient.getAgileSession(username, password, connectString);
 			if (session != null)
 				log.log("Logged in");
-			
+
 		} catch (APIException e) {
 			log.log("Failure to log in");
 			System.exit(1);
 		}
-		
+
 		try {
 			HSSFWorkbook workbook = new HSSFWorkbook(fis);
 			HSSFSheet spreadsheet = workbook.getSheetAt(0);
 			Iterator<Row> rowIterator = spreadsheet.iterator();
-			//skip first row
+			// skip first row
 			rowIterator.next();
-			
-			//read sheet
+
+			// read sheet
 			while (rowIterator.hasNext()) {
 				HSSFRow row = (HSSFRow) rowIterator.next();
 				Iterator<Cell> cellIterator = row.cellIterator();
-				String role = "Page Three."+cellIterator.next().getStringCellValue();//role
-				String name = cellIterator.next().getStringCellValue();//name
-				String userID = cellIterator.next().getStringCellValue();//userid
-				String email = cellIterator.next().getStringCellValue();//email
-				String programName = cellIterator.next().getStringCellValue();//project name
-				String URL = cellIterator.next().getStringCellValue();//url
-				
-				//Check if user is the current updated.
+				String role = "Page Three." + cellIterator.next().getStringCellValue();// role
+				String name = cellIterator.next().getStringCellValue();// name
+				String userID = cellIterator.next().getStringCellValue();// userid
+				String email = cellIterator.next().getStringCellValue();// email
+				String programName = cellIterator.next().getStringCellValue();// project
+																				// name
+				String URL = cellIterator.next().getStringCellValue();// url
+
+				// Check if user is the current updated.
 				IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, programName);
 				ICell cell = program.getCell(role);
 				String userInCell = cell.getValue().toString();
-				
-				//if user currently is in the role
-				if(StringUtils.contains(userInCell, userID)){
-					log.log(name+" is currently the assigned user in role: "+role +" for Project: "+programName);
-					if(userList.get(name)!= null){
+
+				// if user currently is in the role
+				if (StringUtils.contains(userInCell, userID)) {
+					log.log(name + " is currently the assigned user in role: " + role + " for Project: " + programName);
+					if (userList.get(name) != null) {
 						User user = userList.get(name);
 						user.addNewProject(programName, URL);
-					}
-					else{
-						User user = new User(name,userID,email,programName,URL);
-						userList.put(name,user);
+					} else {
+						User user = new User(name, userID, email, programName, URL);
+						userList.put(name, user);
 					}
 				}
 			}
-			
+
 			sendMail(props);
 			fis.close();
-			
-			
-
 
 		} catch (APIException | IOException e) {
 			e.printStackTrace();
@@ -148,6 +146,7 @@ public class EmailNotifyPPMChange {
 		}
 
 	}
+
 	private Properties initializeProperties() {
 		Properties props = new Properties();
 		try {
@@ -197,7 +196,7 @@ public class EmailNotifyPPMChange {
 			// determine if config wants logo
 			String logo = ini.getValue("Settings", "logo");
 			boolean useLogo = logo.equalsIgnoreCase("yes");
-			
+
 			String username = ini.getValue("Admin Mail", "username");
 			String password = ini.getValue("Admin Mail", "password");
 			testRunMail(username, password, props);
@@ -207,7 +206,6 @@ public class EmailNotifyPPMChange {
 				Map.Entry pair = (Map.Entry) iter.next();
 				log.log(pair.getKey());
 				log.log(pair.getValue().toString());
-				IUser user;
 				String key = (String) pair.getKey();
 				String userEmail = "william@anselm.com.tw";
 
@@ -223,16 +221,18 @@ public class EmailNotifyPPMChange {
 				StringBuffer html = new StringBuffer();
 
 				html.append("<!DOCTYPE html><html><head><style>" + "table,th,td{border: 1px solid black; }"
-						+ "td,th{text-align:center;}" + "h3 {color: maroon;margin-left: 80px;}"
-						+ "</style></head><body>");
-				html.append("<h3>您的PLM角色有變更</h3>");
+						+ "td,th{text-align:center;}" + "</style></head><body>");
+				html.append("<p>" + pair.getKey() + ", 您的PLM角色有變更</p>");
 				if (useLogo) {
 					html.append("<img src='cid:image'/><br>");
 				}
-				
+
+				html.append("<table><tr><td>Project Name</td><td>Project ID</td><td>Link</td></tr>");
+				html.append(pair.getValue());
 				html.append("</table></body></html>");
+				html.append("<p>Sincerely,</p><p></p><p>Your Agile PLM Administrator</p>");
 				textPart.setContent(html.toString(), "text/html; charset=UTF-8");
-				
+
 				Multipart email = new MimeMultipart();
 				email.addBodyPart(textPart);
 				// Oracle Logo
@@ -249,11 +249,10 @@ public class EmailNotifyPPMChange {
 				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
 				message.setFrom(new InternetAddress(username)); // 寄件者
 				transport.connect(username, password);
-				//transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
+				transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
 				log.log("郵件成功發送給: " + userEmail);
 				transport.close();
-				
-				
+
 			}
 		} catch (AddressException e) {
 			e.printStackTrace();
@@ -264,48 +263,75 @@ public class EmailNotifyPPMChange {
 		}
 
 	}
-	
-	public static class User{
+
+	public static class User {
 		private String name;
 		private String userID;
 		private String email;
-		private HashMap<String,String> projects = new HashMap<String,String>(); //project and link
-		
-		public User(){
-			
+		private HashMap<String, String> projects = new HashMap<String, String>(); // project
+																					// and
+																					// link
+
+		public User() {
+
 		}
-		public User(String name, String userID, String email, String project, String URL){
+
+		public User(String name, String userID, String email, String project, String URL) {
 			this.setName(name);
 			this.setEmail(email);
 			this.setUserID(userID);
 			projects.put(project, URL);
 		}
+
 		public String getName() {
 			return name;
 		}
+
 		public void setName(String name) {
 			this.name = name;
 		}
+
 		public String getUserID() {
 			return userID;
 		}
+
 		public void setUserID(String userID) {
 			this.userID = userID;
 		}
+
 		public String getEmail() {
 			return email;
 		}
+
 		public void setEmail(String email) {
 			this.email = email;
 		}
-		public void addNewProject(String project, String URL){
+
+		public void addNewProject(String project, String URL) {
 			projects.put(project, URL);
 		}
+
 		@Override
 		public String toString() {
-			return this.getName()+" "+this.getUserID();
+			String toReturn = "";
+			Iterator iter = projects.entrySet().iterator();
+			while (iter.hasNext()) {
+				Map.Entry pair = (Map.Entry) iter.next();
+
+				String projectName = "did not find project";
+				try {
+					IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, pair.getKey());
+					projectName = (String) program.getValue(ProgramConstants.ATT_GENERAL_INFO_NAME);
+				} catch (APIException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				toReturn = toReturn + "<tr><td>" + projectName + "</td><td>" + pair.getKey() + "</td><td><a href="
+						+ pair.getValue() + ">Link to address</a></td></tr>";
+			}
+
+			return toReturn;
 		}
-		
-		
+
 	}
 }

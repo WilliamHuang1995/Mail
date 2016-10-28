@@ -243,6 +243,7 @@ public class EmailNotify {
 				transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
 				log.log("郵件成功發送給: " + userEmail);
 				transport.close();
+				//delete this 
 				System.exit(0);
 			}
 		} catch (AddressException e) {
