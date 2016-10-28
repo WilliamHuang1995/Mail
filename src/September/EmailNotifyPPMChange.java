@@ -153,7 +153,12 @@ public class EmailNotifyPPMChange {
 				}
 			}
 			fis.close();
+			if(userList.size()==0){
+				log.log("所有的員工都並非當下指派的人，系統即將結束");
+				System.exit(0);
+			}
 			log.log("已讀完Excel檔，準備整理訊息并發送郵件給相關人士");
+			
 			sendMail(props);
 
 		} catch (APIException | IOException e) {
@@ -190,8 +195,6 @@ public class EmailNotifyPPMChange {
 		Session mailSession = Session.getDefaultInstance(props, null);
 		log.log("測試是否能連接到MAIL SERVER");
 		try {
-			log.log(1, "Email: " + username);
-			log.log(1, "Password: " + password);
 			Transport transport = mailSession.getTransport();
 			transport.connect(username, password);
 			transport.close();
