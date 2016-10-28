@@ -67,36 +67,45 @@ public class EmailNotifyPPMChange {
 	public EmailNotifyPPMChange() {
 		ini = new Ini();
 		log = new LogIt("PPM");
+		try {
+			log.setLogFile(ini.getValue("File Location", "LOG_FILE_PATH")+"log");
+		} catch (IOException e1) {
+			e1.printStackTrace();
+			log.log("LOG_FILE_PATH有誤，請修改之後再重新嘗試");
+		}
+		log.log("讀取Config里的[Server Info]...");
 		username = ini.getValue("Server Info", "username");
 		password = ini.getValue("Server Info", "password");
 		connectString = ini.getValue("Server Info", "URL");
-
+		log.log(1,"成功!");
 		// Read Excel File
 		Date today = new Date();
 		SimpleDateFormat format = new SimpleDateFormat("MMdd");
 		filename = format.format(today) + ".xlsx";
-		fileLocation = ini.getValue("File Location", "FILEPATH");
+		fileLocation = ini.getValue("File Location", "FILE_PATH");
 		try {
 			fis = new FileInputStream(new File(fileLocation + filename));
 		} catch (Exception e) {
-			log.log("can't find file");
+			log.log("找不到Excel檔案，請檢查File Location里面的FILE_PATH");
 			System.exit(1);
 		}
-
+		
 		// initialize email properties
 		props = initializeProperties();
 	}
 
 	public static void main(String[] args) {
-		// Initialize
+		//初始化
 		EmailNotifyPPMChange ini = new EmailNotifyPPMChange();
+		
 		try {
+			log.log("嘗試登入Agile PLM環境。。");
 			session = WebClient.getAgileSession(username, password, connectString);
 			if (session != null)
-				log.log("Logged in");
+				log.log(1,"登入成功");
 
 		} catch (APIException e) {
-			log.log("Failure to log in");
+			log.log("登入失敗，請確認[Server Info]的資料");
 			System.exit(1);
 		}
 
@@ -108,6 +117,7 @@ public class EmailNotifyPPMChange {
 			rowIterator.next();
 
 			// read sheet
+			log.log("讀取Excel裡面的資料。。。");
 			while (rowIterator.hasNext()) {
 				HSSFRow row = (HSSFRow) rowIterator.next();
 				Iterator<Cell> cellIterator = row.cellIterator();
@@ -118,31 +128,33 @@ public class EmailNotifyPPMChange {
 				String programName = cellIterator.next().getStringCellValue();// project name
 				String URL = cellIterator.next().getStringCellValue();// url
 				String assignedBy = cellIterator.next().getStringCellValue();//assigned by
-
+				log.log("角色: "+role+" 名字: "+name+" ID: "+userID+" 信箱: "+email+" 方案ID: "+programName+" 指派人: "+assignedBy);
 				// Check if user is the current updated.
 				IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, programName);
 				ICell cell = program.getCell("Page Three."+role);
 				String userInCell = cell.getValue().toString();
-
+				log.log("檢查使用者是否是當下指派的員工。。	");
+				
 				// if user currently is in the role
 				if (StringUtils.contains(userInCell, userID)) {
-					log.log(name + " is currently the assigned user in role: " + role + " for Project: " + programName +"Assigned by: "+assignedBy);
+					log.log(1,name+" 是當下指派的員工");
 					if (userList.get(name) != null) {
-						log.log("User already created");
 						User user = userList.get(name);
 						user.addNewProject(programName, URL, assignedBy);
 						//adds new role and also check if it is already added
 						user.addNewRole(programName, role);
 					} else {
-						log.log("User not created");
 						User user = new User(name, userID, email, programName, URL, assignedBy, role);
 						userList.put(name, user);
 					}
+				}else{
+					log.log(1,name+" 不是當下指派的員工，這代表在發這封郵件之前他/她曾經有被指派到這個角色但是又被移除了");
+					log.log(1,"跳過。");
 				}
 			}
-
-			sendMail(props);
 			fis.close();
+			log.log("已讀完Excel檔，準備整理訊息并發送郵件給相關人士");
+			sendMail(props);
 
 		} catch (APIException | IOException e) {
 			e.printStackTrace();
@@ -154,6 +166,7 @@ public class EmailNotifyPPMChange {
 	private Properties initializeProperties() {
 		Properties props = new Properties();
 		try {
+			log.log("初始化郵件屬性...");
 			String transportProtocol = ini.getValue("Admin Mail", "transport protocol");
 			String host = ini.getValue("Admin Mail", "host");
 			String protocolPort = ini.getValue("Admin Mail", "protocol port");
@@ -282,7 +295,6 @@ public class EmailNotifyPPMChange {
 			this.setEmail(email);
 			this.setUserID(userID);
 			projects.put(project, new String[]{URL,assignedBy});
-			log.log("Constructor role:"+role);
 			roles.put(project,role);
 		}
 
