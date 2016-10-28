@@ -111,7 +111,7 @@ public class EmailNotifyPPMChange {
 			while (rowIterator.hasNext()) {
 				HSSFRow row = (HSSFRow) rowIterator.next();
 				Iterator<Cell> cellIterator = row.cellIterator();
-				String role = "Page Three." + cellIterator.next().getStringCellValue();// role
+				String role = cellIterator.next().getStringCellValue();// role
 				String name = cellIterator.next().getStringCellValue();// name
 				String userID = cellIterator.next().getStringCellValue();// userid
 				String email = cellIterator.next().getStringCellValue();// email
@@ -121,17 +121,21 @@ public class EmailNotifyPPMChange {
 
 				// Check if user is the current updated.
 				IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, programName);
-				ICell cell = program.getCell(role);
+				ICell cell = program.getCell("Page Three."+role);
 				String userInCell = cell.getValue().toString();
 
 				// if user currently is in the role
 				if (StringUtils.contains(userInCell, userID)) {
 					log.log(name + " is currently the assigned user in role: " + role + " for Project: " + programName +"Assigned by: "+assignedBy);
 					if (userList.get(name) != null) {
+						log.log("User already created");
 						User user = userList.get(name);
 						user.addNewProject(programName, URL, assignedBy);
+						//adds new role and also check if it is already added
+						user.addNewRole(programName, role);
 					} else {
-						User user = new User(name, userID, email, programName, URL, assignedBy);
+						log.log("User not created");
+						User user = new User(name, userID, email, programName, URL, assignedBy, role);
 						userList.put(name, user);
 					}
 				}
@@ -204,8 +208,6 @@ public class EmailNotifyPPMChange {
 			log.log("開始發送郵件通知相關人員");
 			while (iter.hasNext()) {
 				Map.Entry pair = (Map.Entry) iter.next();
-				log.log(pair.getKey());
-				log.log(pair.getValue().toString());
 				String key = (String) pair.getKey();
 				String userEmail = "william@anselm.com.tw";
 
@@ -227,7 +229,7 @@ public class EmailNotifyPPMChange {
 					html.append("<img src='cid:image'/><br>");
 				}
 
-				html.append("<table><tr><td>Project Name</td><td>Project ID</td><td>Link</td><td>Assigned By</td></tr>");
+				html.append("<table><tr><td>Project Name</td><td>Project ID</td><td>Assigned By</td><td>Role(s) Assigned</td><td>Link</td></tr>");
 				html.append(pair.getValue());
 				html.append("</table></body></html>");
 				html.append("<p>Sincerely,</p><p></p><p>Your Agile PLM Administrator</p>");
@@ -269,16 +271,19 @@ public class EmailNotifyPPMChange {
 		private String userID;
 		private String email;
 		private HashMap<String, String[]> projects = new HashMap<String, String[]>(); // project and link
+		private HashMap<String, String> roles = new HashMap<String,String>();// project and role
 
 		public User() {
 
 		}
 
-		public User(String name, String userID, String email, String project, String URL, String assignedBy) {
+		public User(String name, String userID, String email, String project, String URL, String assignedBy, String role) {
 			this.setName(name);
 			this.setEmail(email);
 			this.setUserID(userID);
 			projects.put(project, new String[]{URL,assignedBy});
+			log.log("Constructor role:"+role);
+			roles.put(project,role);
 		}
 
 		public String getName() {
@@ -308,6 +313,17 @@ public class EmailNotifyPPMChange {
 		public void addNewProject(String project, String URL, String assignedBy) {
 			projects.put(project, new String[]{URL,assignedBy});
 		}
+		
+		public void addNewRole(String project, String role) {
+			if (roles.get(project)==null){
+				roles.put(project, role);
+				return;
+			}
+			String newRole = roles.get(project);
+			if(!StringUtils.contains(newRole, role))
+				newRole = newRole+" "+ role;
+			roles.put(project, newRole);
+		}
 
 		@Override
 		public String toString() {
@@ -323,8 +339,8 @@ public class EmailNotifyPPMChange {
 				} catch (APIException e) {
 					e.printStackTrace();
 				}
-				toReturn = toReturn + "<tr><td>" + projectName + "</td><td>" + pair.getKey() + "</td><td><a href="
-						+ ((String[])pair.getValue())[0] + ">Link to project</a></td><td>"+((String[])pair.getValue())[1]+"</td></tr>";
+				toReturn = toReturn + "<tr><td>" + projectName + "</td><td>" + pair.getKey() +"</td><td>"+((String[])pair.getValue())[1]+"</td><td>"+roles.get(pair.getKey())+"</td><td><a href="
+						+ ((String[])pair.getValue())[0] + ">Link to project</a></td></tr>";
 			}
 
 			return toReturn;
