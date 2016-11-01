@@ -85,9 +85,10 @@ public class NoticeChangePPM implements IEventAction {
 
 		// Initialize role list
 		String roleFromConfig = ini.getValue("Settings", "role");
+		log.log("初始化Role List");
 		roleList = new ArrayList<String>(Arrays.asList(roleFromConfig.split("\\s*,\\s*")));
-		
-		//Initialize current user
+		log.log(roleList);
+		// Initialize current user
 		currentUser = "Unknown";
 
 	}
@@ -104,8 +105,10 @@ public class NoticeChangePPM implements IEventAction {
 		try {
 			// The event is an update event
 			IUpdateEventInfo info = (IUpdateEventInfo) event;
-
+			
+			
 			// Get current user
+			log.log("讀取當前用戶");
 			IUser sessionUser = session.getCurrentUser();
 			currentUser = (String) sessionUser.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
 			
@@ -115,45 +118,56 @@ public class NoticeChangePPM implements IEventAction {
 			// to be frank, the starting index does not matter.
 			int mappingIndex = 1;
 			Map<String, Object[]> empinfo = new TreeMap<String, Object[]>();
+			log.log("檢查Excel檔是否存在");
 			if (!checkExist()) {
+				log.log(1,"不存在");
 				empinfo.put(mappingIndex + "",
 						new Object[] { "User Role", "Name", "user.id", "Email", "Project Name", "Project Link", "Assigned By" });
 			}
 
 			IEventDirtyCell[] cells = info.getCells();
+			log.log("讀取Project資料。。。");
 			IProgram program = (IProgram) session.getObject(info.getDataObject().getAgileClass(),
 					info.getDataObject().getName());
+			
+			log.log("讀取變更欄位。。。");
 			for (IEventDirtyCell dirtyCell : cells) {
+				
+				//檢查config裡面的role list有包含dirty cell
 				if (roleList.contains(dirtyCell.getAttribute().getName())) {
 					String attributeName = dirtyCell.getAttribute().getName();
 					ICell cleanCell = program.getCell(dirtyCell.getAttributeId());
-
-					// gets the objID integer
+					
+					log.log("config裡有包含"+dirtyCell.getAttribute().getName()+"! 繼續！");
+					// gets the objID integer, this is used for creating a link
 					String objID = program.getId().toString();
 					ArrayList<String> idList = new ArrayList<String>(Arrays.asList(objID.split("\\s*=\\s*")));
 					objID = idList.get(1).substring(0, idList.get(1).indexOf(" "));
-
+					
+					//This is used to turn a string representation of values into an ArrayList 
 					ArrayList<String> oldValue = new ArrayList<String>(
 							Arrays.asList(cleanCell.getValue().toString().split("\\s*;\\s*")));
 					ArrayList<String> newValue = new ArrayList<String>(
 							Arrays.asList(dirtyCell.getValue().toString().split("\\s*;\\s*")));
 					newValue.removeAll(oldValue);
-					log.log(newValue);
+					
+					log.log("被添加的值是： ");	log.log(newValue);
 					Iterator<String> it = newValue.iterator();
 					// loop thru new ppl
 					while (it.hasNext()) {
+						//讀取值裡的所有user
 						String nextUser = it.next();
 						String userID = nextUser.substring(nextUser.lastIndexOf("(") + 1, nextUser.lastIndexOf(")"));
 						IUser user = (IUser) session.getObject(IUser.OBJECT_TYPE, userID);
 						String userEmail = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
 						String userName = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
-						//String dataType = cleanCell.getDataType() == 4 ? "Single List" : "Multi List";
-						log.log(userName);
-						log.log(userEmail);
-						log.log(attributeName + " " + userName + " " + userEmail + " " + program.getName());
+						log.log(attributeName + " " + userName + " " +userID +" "+ userEmail + " " + program.getName()+" "+objID+ " "+ currentUser);
 						empinfo.put(++mappingIndex + "", new Object[] { attributeName, userName, userID, userEmail,
 								program.getName(), ini.getValue("Server Info", "url") + URL + objID, currentUser });
 					}
+				}
+				else{
+					log.log("config沒有包含"+dirtyCell.getAttribute().getName()+" ! 跳過!");
 				}
 			}
 
@@ -166,6 +180,7 @@ public class NoticeChangePPM implements IEventAction {
 			}
 
 			// initialize workbook
+			log.log("講讀取的變更寫入進EXCEL裡");
 			rowcount = initializeWorkbook(checkExist(), fileLocation, filename);
 			for (String key : keyid) {
 				HSSFRow row = spreadsheet.createRow(rowcount++);
@@ -176,22 +191,23 @@ public class NoticeChangePPM implements IEventAction {
 					cell.setCellValue((String) obj);
 				}
 			}
-			// initialize workbook as well
 
 			// Write the workbook in file system
 			try {
 				FileOutputStream out = new FileOutputStream(new File(fileLocation + filename));
 				workbook.write(out);
 				out.close();
-				log.log("close");
 				log.log("Write Successful");
 			} catch (IOException e) {
+				log.log("寫出時出錯，請通知system admin [inner]");
+				log.close();
+				return new EventActionResult(event, new ActionResult(ActionResult.NORESULT, null));
 			}
 
 		}
 
 		catch (Exception e) {
-			// TODO Auto-generated catch block
+			log.log("錯誤，請通知system admin [outer]")
 			e.printStackTrace();
 		}
 		log.close();
@@ -206,7 +222,6 @@ public class NoticeChangePPM implements IEventAction {
 			spreadsheet = workbook.getSheetAt(0);
 			// used to append to the current file
 			rowcount = spreadsheet.getLastRowNum() + 1;
-			log.log("ROWCOUNT: " + rowcount);
 			fis.close();
 
 		} else {
@@ -219,7 +234,5 @@ public class NoticeChangePPM implements IEventAction {
 		}
 		return rowcount;
 	}
-
-	// http://anselm-demoplm:7001/Agile/PLMServlet?fromPCClient=true&module=ActivityHandler&requestUrl=module%3DActivityHandler%26opcode%3DdisplayObject%26classid%3D18022%26objid%3D12422%26tabid%3D0%26
 
 }
