@@ -68,7 +68,7 @@ public class EmailNotifyPPMChange {
 		ini = new Ini();
 		log = new LogIt("PPM");
 		try {
-			log.setLogFile(ini.getValue("File Location", "LOG_FILE_PATH")+"log");
+			log.setLogFile(ini.getValue("File Location", "LOG_FILE_PATH")+"ReadExcel.log");
 		} catch (IOException e1) {
 			e1.printStackTrace();
 			log.log("LOG_FILE_PATH有誤，請修改之後再重新嘗試");
@@ -81,7 +81,7 @@ public class EmailNotifyPPMChange {
 		// Read Excel File
 		Date today = new Date();
 		SimpleDateFormat format = new SimpleDateFormat("MMdd");
-		filename = format.format(today) + ".xlsx";
+		filename = format.format(today) + "NoticeChange.xlsx";
 		fileLocation = ini.getValue("File Location", "FILE_PATH");
 		try {
 			fis = new FileInputStream(new File(fileLocation + filename));

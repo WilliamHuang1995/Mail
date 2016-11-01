@@ -73,10 +73,10 @@ public class NoticeChangePPM implements IEventAction {
 		// Initialize filepath
 		Date today = new Date();
 		SimpleDateFormat format = new SimpleDateFormat("MMdd");
-		filename = format.format(today) + ".xlsx";
+		filename = format.format(today) + "NoticeChange.xlsx";
 		fileLocation = ini.getValue("File Location", "FILE_PATH");
 		try {
-			log.setLogFile(ini.getValue("File Location", "LOG_FILE_PATH") + format.format(today) + ".log");
+			log.setLogFile(ini.getValue("File Location", "LOG_FILE_PATH") + format.format(today) + "NoticeChange.log");
 
 		} catch (Exception e) {
 
