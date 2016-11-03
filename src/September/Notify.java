@@ -103,7 +103,7 @@ public class Notify {
 	public static void main(String[] args) {
 
 		// 初始化
-		Notify ini = new Notify();
+		Notify notify = new Notify();
 
 		try {
 			log.log("嘗試登入Agile PLM環境。。");
@@ -169,9 +169,19 @@ public class Notify {
 			}
 			log.log("已讀完PPM模組部分，即將開始PC模組的部分");
 
+			log.log("讀取CHANGE相關的未簽核資料");
+			notify.getChangeTable(session, null);
+
+			log.log("讀取PSR相關的未簽核資料");
+			notify.getPSRTable(session, null);
+
+			log.log("讀取QCR相關的未簽核資料");
+			notify.getQCRTable(session, null);
+
+			log.log("程式正常結束,無異常.\n");
 			sendMail(props);
 
-		} catch (APIException | IOException e) {
+		} catch (Exception e) {
 			e.printStackTrace();
 			System.exit(1);
 		}
@@ -235,7 +245,8 @@ public class Notify {
 			while (iter.hasNext()) {
 				Map.Entry pair = (Map.Entry) iter.next();
 				String key = (String) pair.getKey();
-				String userEmail = "william@anselm.com.tw";
+				User usr = (User) pair.getValue();
+				String userEmail = usr.getEmail();
 
 				Session mailSession = Session.getDefaultInstance(props, null);
 				Transport transport = mailSession.getTransport();
@@ -243,22 +254,27 @@ public class Notify {
 				MimeMessage message = new MimeMessage(mailSession);
 
 				// 設定主旨
-				String subject = "New Changes in your role in Project";
+				String subject = "Daily Digest of updates to your PLM account";
 				message.setSubject(subject, "utf-8");
 				MimeBodyPart textPart = new MimeBodyPart();
 				StringBuffer html = new StringBuffer();
 
 				html.append("<!DOCTYPE html><html><head><style>" + "table,th,td{border: 1px solid black; }"
 						+ "td,th{text-align:center;}" + "</style></head><body>");
-				html.append("<p>" + pair.getKey() + ", 您的PLM角色有變更</p>");
-				if (useLogo) {
-					html.append("<img src='cid:image'/><br>");
-				}
+				html.append("<p>" + pair.getKey() + ", your attention is required</p>");
+				html.append("<img src='cid:image'/><br>");
 
-				html.append(
-						"<table><tr><td>Project Name</td><td>Project ID</td><td>Assigned By</td><td>Role(s) Assigned</td><td>Link</td></tr>");
-				html.append(pair.getValue());
-				html.append("</table></body></html>");
+				
+				if (usr.projects.size() != 0) {
+					html.append("<p>以下是您的角色變更</p>");
+					html.append(((User) pair.getValue()).toPPMString());
+				}
+				html.append("<p></p>");
+				if (usr.getWorkflow() != null) {
+					html.append("<p>以下是您未簽核的流程明細</p>");
+					html.append(((User) pair.getValue()).toPCString());
+				}
+				html.append("</body></html>");
 				html.append("<p>Sincerely,</p><p></p><p>Your Agile PLM Administrator</p>");
 				textPart.setContent(html.toString(), "text/html; charset=UTF-8");
 
@@ -403,37 +419,41 @@ public class Notify {
 		try {
 			ResultSet rs = conA.createStatement().executeQuery(sql);
 			while (rs.next()) {
-				String user = rs.getString(4);
+				String userID = rs.getString(4);
 				String changeNumber = rs.getString(6);
 				String changeType = rs.getString(5);
 				String changeDesc = rs.getString(10);
 				String status = rs.getString(8);
 				String duration = rs.getString(1);
 				String changeID = rs.getString(12);
-				if (userList.containsKey(user)) {
-					User usr = userList.get(user);
-					String result = userList.get(user).getWorkflow();
+				IUser usr = (IUser)session.getObject(IUser.OBJECT_TYPE, userID);
+				String firstName = (String) usr.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
+				if (userList.containsKey(firstName)) {
+					
+					User user = userList.get(firstName);
+					String result = userList.get(firstName).getWorkflow();
 					if (result != null) {
-
+						
 						result = result + "<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
 								+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
 								+ duration + "</td></tr>";
-						usr.setWorkflow(result);
-						userList.put(user, usr);
+						user.setWorkflow(result);
+						userList.put(userID, user);
 
 					} else {
 						result = "<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
 								+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
 								+ duration + "</td></tr>";
-						usr.setWorkflow(result);
-						userList.put(user, usr);
+						user.setWorkflow(result);
+						userList.put(firstName, user);
 					}
 				} else {
-					User usr = new User();
+					User user = new User();
 					String result = "<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
 							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
 							+ duration + "</td></tr>";
-					userList.put(user, usr);
+					user.setWorkflow(result);
+					userList.put(firstName, user);
 				}
 			}
 		} catch (Exception e) {
@@ -447,10 +467,10 @@ public class Notify {
 		private String userID;
 		private String email;
 		private String workflow;
-		private HashMap<String, String[]> projects = new HashMap<String, String[]>(); // project
+		public HashMap<String, String[]> projects = new HashMap<String, String[]>(); // project
 																						// and
 																						// link
-		private HashMap<String, String> roles = new HashMap<String, String>();// project
+		public HashMap<String, String> roles = new HashMap<String, String>();// project
 																				// and
 																				// role
 
@@ -514,9 +534,8 @@ public class Notify {
 			roles.put(project, newRole);
 		}
 
-		@Override
-		public String toString() {
-			String toReturn = "";
+		public String toPPMString() {
+			String toReturn = "<table><tr><td>Project Name</td><td>Project ID</td><td>Assigned By</td><td>Role(s) Assigned</td><td>Link</td></tr>";
 			Iterator iter = projects.entrySet().iterator();
 			while (iter.hasNext()) {
 				Map.Entry pair = (Map.Entry) iter.next();
@@ -528,10 +547,17 @@ public class Notify {
 				} catch (APIException e) {
 					e.printStackTrace();
 				}
-				toReturn = toReturn + "<tr><td>" + projectName + "</td><td>" + pair.getKey() + "</td><td>"
+				toReturn += "<tr><td>" + projectName + "</td><td>" + pair.getKey() + "</td><td>"
 						+ ((String[]) pair.getValue())[1] + "</td><td>" + roles.get(pair.getKey()) + "</td><td><a href="
 						+ ((String[]) pair.getValue())[0] + ">Link to project</a></td></tr>";
 			}
+			toReturn += "</table>";
+			return toReturn;
+		}
+
+		public String toPCString() {
+			String toReturn = "<table><tr><td>表單類別</td><td>表單編號</td><td>表單描述</td><td>站別</td><td>已持續時間(天)</td></tr>";
+			toReturn += this.getWorkflow() + "</table>";
 
 			return toReturn;
 		}
