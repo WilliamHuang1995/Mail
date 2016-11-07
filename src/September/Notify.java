@@ -3,12 +3,9 @@ package September;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -30,7 +27,6 @@ import javax.mail.internet.MimeMessage;
 import javax.mail.internet.MimeMultipart;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
 import org.apache.poi.hssf.usermodel.HSSFWorkbook;
@@ -38,15 +34,11 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 
 import com.agile.api.APIException;
-import com.agile.api.AgileSessionFactory;
 import com.agile.api.IAgileSession;
 import com.agile.api.ICell;
 import com.agile.api.IProgram;
-import com.agile.api.IProject;
-import com.agile.api.ITable;
 import com.agile.api.IUser;
 import com.agile.api.ProgramConstants;
-import com.agile.api.TableTypeConstants;
 import com.agile.api.UserConstants;
 import com.anselm.plm.util.AUtil;
 import com.anselm.plm.utilobj.Ini;
@@ -79,10 +71,10 @@ public class Notify {
 			e1.printStackTrace();
 			log.log("LOG_FILE_PATH有誤，請修改之後再重新嘗試");
 		}
-		log.log("讀取Config里的[Server Info]...");
-		username = ini.getValue("Server Info", "username");
-		password = ini.getValue("Server Info", "password");
-		connectString = ini.getValue("Server Info", "URL");
+		log.log("讀取Config里的[AgileAP]...");
+		username = ini.getValue("AgileAP", "username");
+		password = ini.getValue("AgileAP", "password");
+		connectString = ini.getValue("AgileAP", "url");
 		log.log(1, "成功!");
 		// Read Excel File
 		Date today = new Date();
@@ -112,7 +104,7 @@ public class Notify {
 				log.log(1, "登入成功");
 
 		} catch (APIException e) {
-			log.log("登入失敗，請確認[Server Info]的資料");
+			log.log("登入失敗，請確認[AgileAP]的資料");
 			System.exit(1);
 		}
 
@@ -235,7 +227,6 @@ public class Notify {
 		try {
 			// determine if config wants logo
 			String logo = ini.getValue("Settings", "logo");
-			boolean useLogo = logo.equalsIgnoreCase("yes");
 
 			String username = ini.getValue("Admin Mail", "username");
 			String password = ini.getValue("Admin Mail", "password");
@@ -281,14 +272,12 @@ public class Notify {
 				Multipart email = new MimeMultipart();
 				email.addBodyPart(textPart);
 				// Oracle Logo
-				if (useLogo) {
-					MimeBodyPart picturePart = new MimeBodyPart();
-					FileDataSource fds = new FileDataSource("logo.png");
-					picturePart.setDataHandler(new DataHandler(fds));
-					picturePart.setFileName(fds.getName());
-					picturePart.setHeader("Content-ID", "<image>");
-					email.addBodyPart(picturePart);
-				}
+				MimeBodyPart picturePart = new MimeBodyPart();
+				FileDataSource fds = new FileDataSource("logo.png");
+				picturePart.setDataHandler(new DataHandler(fds));
+				picturePart.setFileName(fds.getName());
+				picturePart.setHeader("Content-ID", "<image>");
+				email.addBodyPart(picturePart);
 				message.setContent(email);
 				// replace wjhuang@ucsd.edu with userEmail
 				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
@@ -313,12 +302,12 @@ public class Notify {
 	 * 郵件內容需包括一個表格，表頭欄位為：表單編號(可超連結)、表單描述、站別、已持續時間(天)
 	 */
 	public void getChangeTable(IAgileSession session, Map map) throws Exception {
-		if (ini.getValue("Server Info", "URL") == null) {
-			log.log("請確定 [Server Info] 裡的　URL　有填寫再重新跑一次");
+		if (ini.getValue("AgileAP", "url") == null) {
+			log.log("請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
 			System.exit(1);
 		}
 		String URL = "<a href='";
-		URL = URL + ini.getValue("Server Info", "URL") + SUBADDRESS;
+		URL = URL + ini.getValue("AgileAP", "url") + SUBADDRESS;
 		Connection conA = null;
 		log.log("嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
 		conA = AUtil.getDbConn(ini, "AgileDB");
@@ -348,12 +337,12 @@ public class Notify {
 	public void getQCRTable(IAgileSession session, Map map) throws Exception {
 
 		log.log("Accessing database for QCR");
-		if (ini.getValue("Server Info", "URL") == null) {
-			log.log("請確定 [Server Info] 裡的　URL　有填寫再重新跑一次");
+		if (ini.getValue("AgileAP", "url") == null) {
+			log.log("請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
 			System.exit(1);
 		}
 		String URL = "<a href='";
-		URL = URL + ini.getValue("Server Info", "URL") + QCR;
+		URL = URL + ini.getValue("AgileAP", "url") + QCR;
 		Connection conA = null;
 		log.log("嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
 		conA = AUtil.getDbConn(ini, "AgileDB");
@@ -383,12 +372,12 @@ public class Notify {
 	public void getPSRTable(IAgileSession session, Map map) throws Exception {
 
 		log.log("Accessing database for PSR");
-		if (ini.getValue("Server Info", "URL") == null) {
-			log.log("請確定 [Server Info] 裡的　URL　有填寫再重新跑一次");
+		if (ini.getValue("AgileAP", "url") == null) {
+			log.log("請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
 			System.exit(1);
 		}
 		String URL = "<a href='";
-		URL = URL + ini.getValue("Server Info", "URL") + PSR;
+		URL = URL + ini.getValue("AgileAP", "url") + PSR;
 		Connection conA = null;
 		log.log("嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
 		conA = AUtil.getDbConn(ini, "AgileDB");

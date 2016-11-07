@@ -129,6 +129,7 @@ public class NoticeChangePPM implements IEventAction {
 			log.log("讀取Project資料。。。");
 			IProgram program = (IProgram) session.getObject(info.getDataObject().getAgileClass(),
 					info.getDataObject().getName());
+			log.log(1,"Project : "+program.getName());
 			
 			log.log("讀取變更欄位。。。");
 			for (IEventDirtyCell dirtyCell : cells) {
@@ -207,7 +208,7 @@ public class NoticeChangePPM implements IEventAction {
 		}
 
 		catch (Exception e) {
-			log.log("錯誤，請通知system admin [outer]")
+			log.log("錯誤，請通知system admin [outer]");
 			e.printStackTrace();
 		}
 		log.close();

@@ -95,6 +95,7 @@ public class EmailNotifyPPMChange {
 	}
 
 	public static void main(String[] args) {
+		
 		//初始化
 		EmailNotifyPPMChange ini = new EmailNotifyPPMChange();
 		
