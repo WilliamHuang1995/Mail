@@ -34,9 +34,11 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 
 import com.agile.api.APIException;
+import com.agile.api.IAgileList;
 import com.agile.api.IAgileSession;
 import com.agile.api.ICell;
 import com.agile.api.IProgram;
+import com.agile.api.IProject;
 import com.agile.api.IUser;
 import com.agile.api.ProgramConstants;
 import com.agile.api.UserConstants;
@@ -61,6 +63,7 @@ public class Notify {
 	static final String SUBADDRESS = "/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=ChangeHandler&classid=6000&objid=";
 	static final String PSR = "/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=PSRHandler&classid=4878&objid=";
 	static final String QCR = "/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=QCRHandler&classid=4928&objid=";
+	static final String PPM = "/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=ActivityHandler&classid=18022&objid=";
 
 	public Notify() {
 		ini = new Ini();
@@ -96,20 +99,22 @@ public class Notify {
 
 		try {
 			readExcelforPPM();
+			getOverdueProjects();
 			log.log("已讀完PPM模組部分，即將開始PC模組的部分\n");
 
 			log.log("讀取CHANGE相關的未簽核資料");
-			notify.getChangeTable(session, null);
+			notify.getChangeTable();
 
 			log.log("讀取PSR相關的未簽核資料");
-			notify.getPSRTable(session, null);
+			notify.getPSRTable();
 
 			log.log("讀取QCR相關的未簽核資料");
-			notify.getQCRTable(session, null);
+			notify.getQCRTable();
 			log.log("讀取結束，準備寄信");
 
 			sendMail(props);
 			log.log("程式正常結束,無異常.\n");
+			
 
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -248,7 +253,7 @@ public class Notify {
 				MimeMessage message = new MimeMessage(mailSession);
 
 				// 設定主旨
-				String subject = "Daily Digest of updates to your PLM account";
+				String subject = "Daily Digest of Updates to your PLM account";
 				message.setSubject(subject, "utf-8");
 				MimeBodyPart textPart = new MimeBodyPart();
 				StringBuffer html = new StringBuffer();
@@ -266,6 +271,11 @@ public class Notify {
 				if (usr.getWorkflow() != null) {
 					html.append("<p>以下是您未簽核的流程明細</p>");
 					html.append(((User) pair.getValue()).toPCString());
+				}
+				html.append("<p></p>");
+				if (usr.getOverdueWork()!=null) {
+					html.append("<p>以下是您超時的工作明細</p>");
+					html.append(((User)pair.getValue()).toOverdueString());
 				}
 				html.append("</body></html>");
 				html.append("<p>Sincerely,</p><p></p><p>Your Agile PLM Administrator</p>");
@@ -300,10 +310,75 @@ public class Notify {
 
 	}
 
+	public static void getOverdueProjects() {
+		try{
+		log.log(1, "Accessing database for Overdue tasks");
+		if (ini.getValue("AgileAP", "url") == null) {
+			log.log(1, "請確定 [AgileAP] 裡的　url　有填寫再重新跑一次");
+			System.exit(1);
+		}
+		String URL = "<a href='";
+		URL = URL + ini.getValue("AgileAP", "url") + PPM;
+		Connection conA = null;
+		log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
+		conA = AUtil.getDbConn(ini, "AgileDB");
+		String sql = "select name,activity_number,id,sch_end_date,round((sysdate-sch_end_date)) as overdue_duration from activity where act_end_date is null and act_start_date is not null and SYSDATE > sch_end_date order by sch_end_date desc";
+		ResultSet rs = conA.createStatement().executeQuery(sql);
+		
+		while (rs.next()) {
+			String programName = rs.getString(1);
+			String programID = rs.getString(2);
+			String objID = rs.getString(3);
+			Date scheduledEndDate = rs.getDate(4);
+			String overdueDuration = rs.getString(5);
+			
+			IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, programID);
+			String owner = ((IAgileList)program.getValue(ProgramConstants.ATT_GENERAL_INFO_OWNER)).toString();
+			owner = owner.substring(owner.lastIndexOf("(")+1, owner.lastIndexOf(")"));
+			
+			IUser usr = (IUser) session.getObject(IUser.OBJECT_TYPE, owner);
+			String firstName = (String) usr.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
+			String email = (String) usr.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
+			String type = program.getAgileClass().getAPIName();
+			if (userList.containsKey(firstName)) {
+				User user = userList.get(firstName);
+				String result = userList.get(firstName).getOverdueWork();
+				if(result!=null){
+					result=result+"<tr><td>" + type + "</td><td nowrap='nowrap'>" + URL + objID + "'>"
+							+ programName + "</a></td><td>" + scheduledEndDate + "</td><td>" + overdueDuration + "</td></tr>";
+					user.setOverdueWork(result);
+					userList.put(firstName, user);
+				}
+				else{
+					result = "<tr><td>" + type + "</td><td nowrap='nowrap'>" + URL + objID + "'>"
+							+ programName + "</a></td><td>" + scheduledEndDate + "</td><td>" + overdueDuration + "</td></tr>";
+					user.setOverdueWork(result);
+					userList.put(firstName, user);
+					
+				}
+			}else{
+				User user = new User();
+				String result = "<tr><td>" + type + "</td><td nowrap='nowrap'>" + URL + objID + "'>"
+						+ programName + "</a></td><td>" + scheduledEndDate + "</td><td>" + overdueDuration + "</td></tr>";
+				user.setOverdueWork(result);
+				user.setEmail(email);
+				userList.put(firstName, user);
+				
+			}
+			
+		}conA.close();
+		}catch(Exception e){
+			e.printStackTrace();
+		}
+		
+		
+
+	}
+
 	/*
 	 * 郵件內容需包括一個表格，表頭欄位為：表單編號(可超連結)、表單描述、站別、已持續時間(天)
 	 */
-	public void getChangeTable(IAgileSession session, Map map) throws Exception {
+	public void getChangeTable() throws Exception {
 		log.log(1, "Accessing database for Change");
 		if (ini.getValue("AgileAP", "url") == null) {
 			log.log(1, "請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
@@ -337,7 +412,7 @@ public class Notify {
 
 	}
 
-	public void getQCRTable(IAgileSession session, Map map) throws Exception {
+	public void getQCRTable() throws Exception {
 
 		log.log(1, "Accessing database for QCR");
 		if (ini.getValue("AgileAP", "url") == null) {
@@ -372,7 +447,7 @@ public class Notify {
 
 	}
 
-	public void getPSRTable(IAgileSession session, Map map) throws Exception {
+	public void getPSRTable() throws Exception {
 
 		log.log(1, "Accessing database for PSR");
 		if (ini.getValue("AgileAP", "url") == null) {
@@ -471,6 +546,7 @@ public class Notify {
 		private String userID;
 		private String email;
 		private String workflow;
+		private String overdueWork;
 		public HashMap<String, String[]> projects = new HashMap<String, String[]>(); // project
 																						// and
 																						// link
@@ -538,6 +614,14 @@ public class Notify {
 			roles.put(project, newRole);
 		}
 
+		public String getOverdueWork() {
+			return overdueWork;
+		}
+
+		public void setOverdueWork(String overdueWork) {
+			this.overdueWork = overdueWork;
+		}
+
 		public String toPPMString() {
 			String toReturn = "<table><tr><td>Project Name</td><td>Project ID</td><td>Assigned By</td><td>Role(s) Assigned</td><td>Link</td></tr>";
 			Iterator iter = projects.entrySet().iterator();
@@ -563,6 +647,12 @@ public class Notify {
 			String toReturn = "<table><tr><td>表單類別</td><td>表單編號</td><td>表單描述</td><td>站別</td><td>已持續時間(天)</td></tr>";
 			toReturn += this.getWorkflow() + "</table>";
 
+			return toReturn;
+		}
+		
+		public String toOverdueString(){
+			String toReturn = "<table><tr><td>工作編號</td><td>工作類別</td><td>預計結束時間</td><td>已持續時間(天)</td></tr>";
+			toReturn += this.getOverdueWork() + "</table>";
 			return toReturn;
 		}
 
