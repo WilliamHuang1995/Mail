@@ -50,8 +50,8 @@ public class Notify {
 	private static Ini ini = null;
 	private static LogIt log = null;
 	private static IAgileSession session;
-	private String filename;
-	private String fileLocation;
+	private static String filename;
+	private static String fileLocation;
 	private static FileInputStream fis = null;
 	private static String username;
 	private static String password;
@@ -76,20 +76,6 @@ public class Notify {
 		password = ini.getValue("AgileAP", "password");
 		connectString = ini.getValue("AgileAP", "url");
 		log.log(1, "成功!");
-		// Read Excel File
-		Date today = new Date();
-		SimpleDateFormat format = new SimpleDateFormat("MMdd");
-		filename = format.format(today) + "NoticeChange.xlsx";
-		fileLocation = ini.getValue("File Location", "FILE_PATH");
-		try {
-			fis = new FileInputStream(new File(fileLocation + filename));
-		} catch (Exception e) {
-			log.log("找不到Excel檔案，請檢查File Location里面的FILE_PATH");
-			System.exit(1);
-		}
-
-		// initialize email properties
-		props = initializeProperties();
 	}
 
 	public static void main(String[] args) {
@@ -109,6 +95,42 @@ public class Notify {
 		}
 
 		try {
+			readExcelforPPM();
+			log.log("已讀完PPM模組部分，即將開始PC模組的部分\n");
+
+			log.log("讀取CHANGE相關的未簽核資料");
+			notify.getChangeTable(session, null);
+
+			log.log("讀取PSR相關的未簽核資料");
+			notify.getPSRTable(session, null);
+
+			log.log("讀取QCR相關的未簽核資料");
+			notify.getQCRTable(session, null);
+			log.log("讀取結束，準備寄信");
+
+			sendMail(props);
+			log.log("程式正常結束,無異常.\n");
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			System.exit(1);
+		}
+
+	}
+
+	private static void readExcelforPPM() {
+		// Read Excel File
+		try {
+			Date today = new Date();
+			SimpleDateFormat format = new SimpleDateFormat("MMdd");
+			filename = format.format(today) + "NoticeChange.xlsx";
+			fileLocation = ini.getValue("File Location", "FILE_PATH");
+			try {
+				fis = new FileInputStream(new File(fileLocation + filename));
+			} catch (Exception e) {
+				log.log("找不到Excel檔案，請檢查File Location里面的FILE_PATH");
+				return;
+			}
 			HSSFWorkbook workbook = new HSSFWorkbook(fis);
 			HSSFSheet spreadsheet = workbook.getSheetAt(0);
 			Iterator<Row> rowIterator = spreadsheet.iterator();
@@ -155,32 +177,12 @@ public class Notify {
 				}
 			}
 			fis.close();
-			if (userList.size() == 0) {
-				log.log("所有的員工都並非當下指派的人，系統即將結束");
-				System.exit(0);
-			}
-			log.log("已讀完PPM模組部分，即將開始PC模組的部分");
-
-			log.log("讀取CHANGE相關的未簽核資料");
-			notify.getChangeTable(session, null);
-
-			log.log("讀取PSR相關的未簽核資料");
-			notify.getPSRTable(session, null);
-
-			log.log("讀取QCR相關的未簽核資料");
-			notify.getQCRTable(session, null);
-
-			log.log("程式正常結束,無異常.\n");
-			sendMail(props);
-
-		} catch (Exception e) {
+		} catch (IOException | APIException e) {
 			e.printStackTrace();
-			System.exit(1);
 		}
-
 	}
 
-	private Properties initializeProperties() {
+	private static Properties initializeProperties() {
 		Properties props = new Properties();
 		try {
 			log.log("初始化郵件屬性...");
@@ -204,7 +206,10 @@ public class Notify {
 	}
 
 	private static void testRunMail(String username, String password, Properties props) {
+
 		Session mailSession = Session.getDefaultInstance(props, null);
+		// initialize email properties
+
 		log.log("測試是否能連接到MAIL SERVER");
 		try {
 			Transport transport = mailSession.getTransport();
@@ -225,11 +230,9 @@ public class Notify {
 
 	private static void sendMail(Properties props) {
 		try {
-			// determine if config wants logo
-			String logo = ini.getValue("Settings", "logo");
-
 			String username = ini.getValue("Admin Mail", "username");
 			String password = ini.getValue("Admin Mail", "password");
+			props = initializeProperties();
 			testRunMail(username, password, props);
 			Iterator iter = userList.entrySet().iterator();
 			log.log("開始發送郵件通知相關人員");
@@ -255,7 +258,6 @@ public class Notify {
 				html.append("<p>" + pair.getKey() + ", your attention is required</p>");
 				html.append("<img src='cid:image'/><br>");
 
-				
 				if (usr.projects.size() != 0) {
 					html.append("<p>以下是您的角色變更</p>");
 					html.append(((User) pair.getValue()).toPPMString());
@@ -273,7 +275,7 @@ public class Notify {
 				email.addBodyPart(textPart);
 				// Oracle Logo
 				MimeBodyPart picturePart = new MimeBodyPart();
-				FileDataSource fds = new FileDataSource("logo.png");
+				FileDataSource fds = new FileDataSource(ini.getValue("File Location", "FILE_PATH") + "logo.png");
 				picturePart.setDataHandler(new DataHandler(fds));
 				picturePart.setFileName(fds.getName());
 				picturePart.setHeader("Content-ID", "<image>");
@@ -302,14 +304,15 @@ public class Notify {
 	 * 郵件內容需包括一個表格，表頭欄位為：表單編號(可超連結)、表單描述、站別、已持續時間(天)
 	 */
 	public void getChangeTable(IAgileSession session, Map map) throws Exception {
+		log.log(1, "Accessing database for Change");
 		if (ini.getValue("AgileAP", "url") == null) {
-			log.log("請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
+			log.log(1, "請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
 			System.exit(1);
 		}
 		String URL = "<a href='";
 		URL = URL + ini.getValue("AgileAP", "url") + SUBADDRESS;
 		Connection conA = null;
-		log.log("嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
+		log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
 		conA = AUtil.getDbConn(ini, "AgileDB");
 		String sql = "select "
 				+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
@@ -336,15 +339,15 @@ public class Notify {
 
 	public void getQCRTable(IAgileSession session, Map map) throws Exception {
 
-		log.log("Accessing database for QCR");
+		log.log(1, "Accessing database for QCR");
 		if (ini.getValue("AgileAP", "url") == null) {
-			log.log("請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
+			log.log(1, "請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
 			System.exit(1);
 		}
 		String URL = "<a href='";
 		URL = URL + ini.getValue("AgileAP", "url") + QCR;
 		Connection conA = null;
-		log.log("嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
+		log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
 		conA = AUtil.getDbConn(ini, "AgileDB");
 		String sql = "select "
 				+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
@@ -371,15 +374,15 @@ public class Notify {
 
 	public void getPSRTable(IAgileSession session, Map map) throws Exception {
 
-		log.log("Accessing database for PSR");
+		log.log(1, "Accessing database for PSR");
 		if (ini.getValue("AgileAP", "url") == null) {
-			log.log("請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
+			log.log(1, "請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
 			System.exit(1);
 		}
 		String URL = "<a href='";
 		URL = URL + ini.getValue("AgileAP", "url") + PSR;
 		Connection conA = null;
-		log.log("嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
+		log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
 		conA = AUtil.getDbConn(ini, "AgileDB");
 		String sql = "select "
 				+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
@@ -404,6 +407,14 @@ public class Notify {
 
 	}
 
+	/**
+	 * @param conA
+	 *            used to connect to the database
+	 * @param sql
+	 *            used to run the SQL
+	 * @param URL
+	 *            used to create the link in the email.
+	 **/
 	public void runSQL(Connection conA, String sql, String URL) {
 		try {
 			ResultSet rs = conA.createStatement().executeQuery(sql);
@@ -415,14 +426,17 @@ public class Notify {
 				String status = rs.getString(8);
 				String duration = rs.getString(1);
 				String changeID = rs.getString(12);
-				IUser usr = (IUser)session.getObject(IUser.OBJECT_TYPE, userID);
+				IUser usr = (IUser) session.getObject(IUser.OBJECT_TYPE, userID);
 				String firstName = (String) usr.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
+				String email = (String) usr.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
+				log.log(1, "變更類型: " + changeType + " 表單名字: " + changeNumber + " 表單描述: " + changeDesc + " 站別: " + status
+						+ " 持續時間: " + duration);
 				if (userList.containsKey(firstName)) {
-					
+
 					User user = userList.get(firstName);
 					String result = userList.get(firstName).getWorkflow();
 					if (result != null) {
-						
+
 						result = result + "<tr><td>" + changeType + "</td><td nowrap='nowrap'>" + URL + changeID + "'>"
 								+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
 								+ duration + "</td></tr>";
@@ -442,6 +456,7 @@ public class Notify {
 							+ changeNumber + "</a></td><td>" + changeDesc + "</td><td>" + status + "</td><td>"
 							+ duration + "</td></tr>";
 					user.setWorkflow(result);
+					user.setEmail(email);
 					userList.put(firstName, user);
 				}
 			}
