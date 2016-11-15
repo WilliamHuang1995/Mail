@@ -5,6 +5,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -18,6 +19,7 @@ import javax.mail.Message;
 import javax.mail.MessagingException;
 import javax.mail.Multipart;
 import javax.mail.NoSuchProviderException;
+import javax.mail.SendFailedException;
 import javax.mail.Session;
 import javax.mail.Transport;
 import javax.mail.internet.AddressException;
@@ -165,7 +167,7 @@ public class Notify {
 					IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, pair.getKey());
 					projectName = (String) program.getValue(ProgramConstants.ATT_GENERAL_INFO_NAME);
 				} catch (APIException e) {
-					e.printStackTrace();
+					log.log(e);
 					displayError();
 				}
 				toReturn += "<tr><td>" + projectName + "</td><td>" + pair.getKey() + "</td><td>"
@@ -184,7 +186,7 @@ public class Notify {
 		}
 
 		public String toOverdueString() {
-			String toReturn = "<table><tr><td>工作類別</td><td>工作編號</td><td>預計結束時間</td><td>已持續時間(天)</td></tr>";
+			String toReturn = "<table><tr><td>工作類別</td><td>工作名字</td><td>預計結束時間</td><td>已持續時間(天)</td></tr>";
 			toReturn += this.getOverdueWork() + "</table>";
 			return toReturn;
 		}
@@ -205,7 +207,7 @@ public class Notify {
 			// 設定路徑
 			log.setLogFile(ini.getValue("File Location", "LOG_FILE_PATH") + date + "Notify.log");
 		} catch (IOException e) {
-			e.printStackTrace();
+			log.log(e);
 			log.log("LOG_FILE_PATH有誤，請修改之後再重新嘗試");
 			displayError();
 			System.exit(1);
@@ -237,6 +239,11 @@ public class Notify {
 			displayError();
 			System.exit(1);
 		}
+		testSQLConnection();
+		testRunMail();
+		
+		
+		
 	}
 
 	/*
@@ -244,6 +251,22 @@ public class Notify {
 	 */
 	private static void displayError() {
 		JOptionPane.showMessageDialog(null, "程式出錯! 請檢查LOG檔!", "Error Message", JOptionPane.ERROR_MESSAGE);
+	}
+	
+	private static void testSQLConnection(){
+		log.log("測試DB的連線");
+		Connection conA = AUtil.getDbConn(ini, "AgileDB");
+		//random sql string
+		String sql = "Select * from activity";
+		try {
+			log.log("嘗試連接database...");
+			conA.createStatement().executeQuery(sql);
+			log.log("成功");
+		} catch (Exception e) {
+			displayError();
+			log.log("連接失敗，請檢查AgileDB的設定");
+			System.exit(1);
+		}
 	}
 
 	/*
@@ -262,6 +285,7 @@ public class Notify {
 			processExcelforPPM();
 			getOverdueProjects();
 			log.log("已讀完PPM模組部分，即將開始PC模組的部分\n");
+			
 			notify.getIncompleteChange();
 			notify.getIncompletePSR();
 			notify.getIncompleteQCR();
@@ -271,7 +295,7 @@ public class Notify {
 			log.log("程式正常結束,無異常.\n");
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			log.log(e);
 			displayError();
 			System.exit(1);
 		}
@@ -294,7 +318,7 @@ public class Notify {
 			props.setProperty("mail.smtp.auth", "true");
 
 		} catch (Exception e) {
-			e.printStackTrace();
+			log.log(e);
 			log.log("系統在設定寄件性能時出錯,請確認[Admin Mail]裡的設定都是正確再重試");
 			displayError();
 			System.exit(1);
@@ -302,20 +326,27 @@ public class Notify {
 		return props;
 	}
 
-	private static void testRunMail(String username, String password, Properties props) {
-
-		Session mailSession = Session.getDefaultInstance(props, null);
+	private static void testRunMail() {
 		// initialize email properties
-
+		String username, password;
+		username = ini.getValue("Admin Mail", "username");
+		password = ini.getValue("Admin Mail", "password");
+		props = initializeProperties();
+		Session mailSession = Session.getDefaultInstance(props, null);
 		log.log("測試是否能連接到MAIL SERVER");
 		try {
+			MimeMessage message = new MimeMessage(mailSession);
 			Transport transport = mailSession.getTransport();
+			Multipart email = new MimeMultipart();
+			
+			message.setContent(email);
+			message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
 			transport.connect(username, password);
 			transport.close();
-
 			log.log("成功連接MAIL");
 
 		} catch (MessagingException e) {
+			log.log(e);
 			log.log("登入失敗,請查看 [Admin Mail] 的前3項是否正確");
 			displayError();
 			System.exit(1);
@@ -323,12 +354,16 @@ public class Notify {
 
 	}
 
+	/*
+	 * 寄信給之前所記錄的所有用戶
+	 * 郵件的詳細內容都在這裡所產生
+	 * @warning 注意事項，logo.png是oracle的logo，需要將檔案存在跟Excel檔同一個資料夾裏
+	 */
 	private static void notifyRelevantUsers(Properties props) {
 		try {
+			//寄件者的帳號密碼
 			String username = ini.getValue("Admin Mail", "username");
 			String password = ini.getValue("Admin Mail", "password");
-			props = initializeProperties();
-			testRunMail(username, password, props);
 			Iterator iter = userList.entrySet().iterator();
 			log.log("開始發送郵件通知相關人員");
 			while (iter.hasNext()) {
@@ -347,24 +382,31 @@ public class Notify {
 				message.setSubject(subject, "utf-8");
 				MimeBodyPart textPart = new MimeBodyPart();
 				StringBuffer html = new StringBuffer();
+				
+				//以下為信件內容
 
 				html.append("<!DOCTYPE html><html><head><style>" + "table,th,td{border: 1px solid black; }"
 						+ "td,th{text-align:center;}" + "</style></head><body>");
 				html.append("<p>" + pair.getKey() + ", your attention is required</p>");
 				html.append("<img src='cid:image'/><br>");
 
+				//檢查用戶是否有新指派的專案
 				if (usr.projects.size() != 0) {
-					html.append("<p>以下是您的角色變更</p>");
+					html.append("<p>以下是您被指派的新專案</p>");
 					html.append(((User) pair.getValue()).toPPMString());
 				}
+				
+				//檢查用戶是否有未簽核的表單通知
 				html.append("<p></p>");
 				if (usr.getWorkflow() != null) {
-					html.append("<p>以下是您未簽核的流程明細</p>");
+					html.append("<p>以下是您未簽核表單通知</p>");
 					html.append(((User) pair.getValue()).toPCString());
 				}
+				
+				//檢查是否有逾期的任務
 				html.append("<p></p>");
 				if (usr.getOverdueWork() != null) {
-					html.append("<p>以下是您超時的工作明細</p>");
+					html.append("<p>以下是您的逾期通知</p>");
 					html.append(((User) pair.getValue()).toOverdueString());
 				}
 				html.append("</body></html>");
@@ -373,7 +415,6 @@ public class Notify {
 
 				Multipart email = new MimeMultipart();
 				email.addBodyPart(textPart);
-				// Oracle Logo
 				MimeBodyPart picturePart = new MimeBodyPart();
 				FileDataSource fds = new FileDataSource(ini.getValue("File Location", "FILE_PATH") + "logo.png");
 				picturePart.setDataHandler(new DataHandler(fds));
@@ -381,24 +422,24 @@ public class Notify {
 				picturePart.setHeader("Content-ID", "<image>");
 				email.addBodyPart(picturePart);
 				message.setContent(email);
-				// replace wjhuang@ucsd.edu with userEmail
-				message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
-				message.setFrom(new InternetAddress(username)); // 寄件者
+				//TODO replace with userEmail
+				message.addRecipient(Message.RecipientType.TO, new InternetAddress("shsidforever@gmail.com"));
+				message.setFrom(new InternetAddress(username));
 				transport.connect(username, password);
-				transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
-				log.log("郵件成功發送給: " + userEmail);
+				log.log("嘗試發送給: " + userEmail);
+				try{
+					transport.sendMessage(message, message.getRecipients(Message.RecipientType.TO));
+					log.log(1,"成功");
+				}
+				catch (SendFailedException e) {
+					log.log(1,"用戶郵箱有問題，跳過");
+				}
 				transport.close();
-
 			}
-		} catch (AddressException e) {
-			e.printStackTrace();
-			displayError();
-		} catch (NoSuchProviderException e) {
-			e.printStackTrace();
-			displayError();
-		} catch (MessagingException e) {
-			e.printStackTrace();
-			displayError();
+		}   catch (MessagingException e){
+			log.log(1,"程式在寄信時出錯，請檢查Admin Mail裏面的設定");
+			System.exit(1);
+			
 		}
 
 	}
@@ -406,16 +447,20 @@ public class Notify {
 	/*
 	 * 第一部分： 讀取Excel並將相關用戶加進User Class
 	 * 由於另一個程式將記錄任何的添加/替換變更，在這裡需要特別再去檢查當下使用者是否符合Excel檔所描述的
+	 * @exception APIException 當尋找User時或是project時有可能會出錯
+	 * @exception IOException 找不到Excel檔時：1.路徑給錯，2.沒有角色變更
 	 */
 	private static void processExcelforPPM() {
 		try {
+			
 			Date today = new Date();
 			SimpleDateFormat format = new SimpleDateFormat("MMdd");
 			filename = format.format(today) + "NoticeChange.xlsx";
 			fileLocation = ini.getValue("File Location", "FILE_PATH");
+			log.log("讀取Excel檔: "+fileLocation+filename);
 			try {
 				fis = new FileInputStream(new File(fileLocation + filename));
-			} catch (Exception e) {
+			} catch (IOException e) {
 				log.log("找不到Excel檔案，請檢查File Location里面的FILE_PATH\n跳過");
 				return;
 			}
@@ -451,13 +496,16 @@ public class Notify {
 				if (StringUtils.contains(userInCell, userID)) {
 					log.log(1, name + " 是當下指派的員工");
 					
-					//要是已經記錄 -> 
+					//要是程式已經記錄過-> 在已存在的記錄上做變更
 					if (userList.get(name) != null) {
 						User user = userList.get(name);
 						user.addNewProject(programName, URL, assignedBy);
 						// adds new role and also check if it is already added
 						user.addNewRole(programName, role);
-					} else {
+					
+					}
+					//不然就創新的User然後記錄起來
+					else {
 						User user = new User(name, userID, email, programName, URL, assignedBy, role);
 						userList.put(name, user);
 					}
@@ -469,23 +517,23 @@ public class Notify {
 			}
 			fis.close();
 		} catch (IOException | APIException e) {
-			e.printStackTrace();
+			log.log(e);
+			log.log("程式在讀Excel時出錯，請不要亂改程式裏的資料");
 			displayError();
 		}
 	}
 
+	/*
+	 * 第二部分： 用SQL找超時的工作
+	 * AgileAP裏的url在這時候肯定有值，由於在初始化就有偵測過。
+	 */
 	public static void getOverdueProjects() {
 		try {
 			log.log(1, "Accessing database for Overdue tasks");
-			if (ini.getValue("AgileAP", "url") == null) {
-				log.log(1, "請確定 [AgileAP] 裡的　url　有填寫再重新跑一次");
-				System.exit(1);
-			}
+			//URL是用來之後給用戶鏈接用的
 			String URL = "<a href='";
 			URL = URL + ini.getValue("AgileAP", "url") + PPM;
-			Connection conA = null;
-			log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
-			conA = AUtil.getDbConn(ini, "AgileDB");
+			Connection conA = AUtil.getDbConn(ini, "AgileDB");
 			String sql = "select name,activity_number,id,sch_end_date,round((sysdate-sch_end_date)) as overdue_duration from activity where act_end_date is null and act_start_date is not null and SYSDATE > sch_end_date order by sch_end_date desc";
 			ResultSet rs = conA.createStatement().executeQuery(sql);
 
@@ -533,26 +581,19 @@ public class Notify {
 			}
 			conA.close();
 		} catch (Exception e) {
-			e.printStackTrace();
+			log.log(e);
 			displayError();
 		}
 
 	}
 
 	/*
-	 * 郵件內容需包括一個表格，表頭欄位為：表單編號(可超連結)、表單描述、站別、已持續時間(天)
+	 * 讀取所有未簽核的表單
 	 */
 	public void getIncompleteChange() throws Exception {
 		log.log(1, "Accessing database for Change");
-		if (ini.getValue("AgileAP", "url") == null) {
-			log.log(1, "請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
-			System.exit(1);
-		}
-		String URL = "<a href='";
-		URL = URL + ini.getValue("AgileAP", "url") + SUBADDRESS;
-		Connection conA = null;
-		log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
-		conA = AUtil.getDbConn(ini, "AgileDB");
+		String URL = "<a href='" + ini.getValue("AgileAP", "url") + SUBADDRESS;
+		Connection conA = AUtil.getDbConn(ini, "AgileDB");
 		String sql = "select "
 				+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
 				+ ", round((sysdate-w.last_upd),2)  DAYS 			"
@@ -576,18 +617,14 @@ public class Notify {
 
 	}
 
+	/*
+	 * 讀取所有未簽核的表單
+	 */
 	public void getIncompleteQCR() throws Exception {
 
 		log.log(1, "Accessing database for QCR");
-		if (ini.getValue("AgileAP", "url") == null) {
-			log.log(1, "請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
-			System.exit(1);
-		}
-		String URL = "<a href='";
-		URL = URL + ini.getValue("AgileAP", "url") + QCR;
-		Connection conA = null;
-		log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
-		conA = AUtil.getDbConn(ini, "AgileDB");
+		String URL = "<a href='" + ini.getValue("AgileAP", "url") + QCR;
+		Connection conA = AUtil.getDbConn(ini, "AgileDB");
 		String sql = "select "
 				+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
 				+ ", round((sysdate-w.last_upd),2)  DAYS 			"
@@ -611,18 +648,14 @@ public class Notify {
 
 	}
 
+	/*
+	 * 讀取所有未簽核的表單
+	 */
 	public void getIncompletePSR() throws Exception {
 
 		log.log(1, "Accessing database for PSR");
-		if (ini.getValue("AgileAP", "url") == null) {
-			log.log(1, "請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
-			System.exit(1);
-		}
-		String URL = "<a href='";
-		URL = URL + ini.getValue("AgileAP", "url") + PSR;
-		Connection conA = null;
-		log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
-		conA = AUtil.getDbConn(ini, "AgileDB");
+		String URL = "<a href='"+ ini.getValue("AgileAP", "url") + PSR;
+		Connection conA = AUtil.getDbConn(ini, "AgileDB");
 		String sql = "select "
 				+ "round((sysdate-w.last_upd)-2*FLOOR((sysdate-w.last_upd)/7)-DECODE(SIGN(TO_CHAR(sysdate,'D')-TO_CHAR(w.last_upd,'D')),-1,2,0)+DECODE(TO_CHAR(w.last_upd,'D'),7,1,0)-DECODE(TO_CHAR(sysdate,'D'),7,1,0),2) as WORKDAYS "
 				+ ", round((sysdate-w.last_upd),2)  DAYS 			"
