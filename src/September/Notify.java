@@ -25,6 +25,7 @@ import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeBodyPart;
 import javax.mail.internet.MimeMessage;
 import javax.mail.internet.MimeMultipart;
+import javax.swing.JOptionPane;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.hssf.usermodel.HSSFRow;
@@ -65,26 +66,164 @@ public class Notify {
 	static final String QCR = "/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=QCRHandler&classid=4928&objid=";
 	static final String PPM = "/PLMServlet?action=OpenEmailObject&isFromNotf=true&module=ActivityHandler&classid=18022&objid=";
 
+	/*
+	 * Inner Class
+	 * 創造目的： 由於三個部分有可能衝突，所以建立此Class來追蹤一個user所有的流程
+	 * @param name 用戶名
+	 * @param userID 用戶的ID
+	 * @param email 用戶的郵箱
+	 * @param incompleteWorkflow 為簽核的流程
+	 * @param overdueTask 為完成的工作
+	 * @param projects 記錄指派人以及專案名
+	 * @param roles 記錄專案被指派的角色
+	 */
+	public static class User {
+		private String name;
+		private String userID;
+		private String email;
+		private String incompleteWorkflow;
+		private String overdueTask;
+		public HashMap<String, String[]> projects = new HashMap<String, String[]>();
+		public HashMap<String, String> roles = new HashMap<String, String>();
+		
+
+		public User() {
+		}
+
+		public User(String name, String userID, String email, String project, String URL, String assignedBy,
+				String role) {
+			this.setName(name);
+			this.setEmail(email);
+			this.setUserID(userID);
+			projects.put(project, new String[] { URL, assignedBy });
+			roles.put(project, role);
+		}
+
+		public String getName() {
+			return name;
+		}
+
+		public void setName(String name) {
+			this.name = name;
+		}
+
+		public String getUserID() {
+			return userID;
+		}
+
+		public void setUserID(String userID) {
+			this.userID = userID;
+		}
+
+		public String getEmail() {
+			return email;
+		}
+
+		public void setEmail(String email) {
+			this.email = email;
+		}
+
+		public String getWorkflow() {
+			return incompleteWorkflow;
+		}
+
+		public void setWorkflow(String workflow) {
+			this.incompleteWorkflow = workflow;
+		}
+
+		public void addNewProject(String project, String URL, String assignedBy) {
+			projects.put(project, new String[] { URL, assignedBy });
+		}
+
+		public void addNewRole(String project, String role) {
+			if (roles.get(project) == null) {
+				roles.put(project, role);
+				return;
+			}
+			String newRole = roles.get(project);
+			if (!StringUtils.contains(newRole, role))
+				newRole = newRole + " " + role;
+			roles.put(project, newRole);
+		}
+
+		public String getOverdueWork() {
+			return overdueTask;
+		}
+
+		public void setOverdueWork(String overdueWork) {
+			this.overdueTask = overdueWork;
+		}
+
+		public String toPPMString() {
+			String toReturn = "<table><tr><td>Project Name</td><td>Project ID</td><td>Assigned By</td><td>Role(s) Assigned</td><td>Link</td></tr>";
+			Iterator iter = projects.entrySet().iterator();
+			while (iter.hasNext()) {
+				Map.Entry pair = (Map.Entry) iter.next();
+
+				String projectName = "did not find project";
+				try {
+					IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, pair.getKey());
+					projectName = (String) program.getValue(ProgramConstants.ATT_GENERAL_INFO_NAME);
+				} catch (APIException e) {
+					e.printStackTrace();
+					displayError();
+				}
+				toReturn += "<tr><td>" + projectName + "</td><td>" + pair.getKey() + "</td><td>"
+						+ ((String[]) pair.getValue())[1] + "</td><td>" + roles.get(pair.getKey()) + "</td><td><a href="
+						+ ((String[]) pair.getValue())[0] + ">Link to project</a></td></tr>";
+			}
+			toReturn += "</table>";
+			return toReturn;
+		}
+
+		public String toPCString() {
+			String toReturn = "<table><tr><td>表單類別</td><td>表單編號</td><td>表單描述</td><td>站別</td><td>已持續時間(天)</td></tr>";
+			toReturn += this.getWorkflow() + "</table>";
+
+			return toReturn;
+		}
+
+		public String toOverdueString() {
+			String toReturn = "<table><tr><td>工作類別</td><td>工作編號</td><td>預計結束時間</td><td>已持續時間(天)</td></tr>";
+			toReturn += this.getOverdueWork() + "</table>";
+			return toReturn;
+		}
+
+	}
+	/*
+	 * 功能：初始化 將Log 與 Ini 初始化 初始化 Log 的路徑 （路徑取決於Config裏的LOG_FILE_PATH） LOG檔案名稱為
+	 * 日期+Notify。log （EX: 1115Notify.log 代表11月15日所產生的log檔）
+	 * 初始化客戶端資料，嘗試登入，若失敗將退出程式
+	 */
 	public Notify() {
 		ini = new Ini();
 		log = new LogIt("Notify");
+		Date today = new Date();
+		SimpleDateFormat format = new SimpleDateFormat("MMdd");
+		String date = format.format(today);
 		try {
-			log.setLogFile(ini.getValue("File Location", "LOG_FILE_PATH") + "ReadExcel.log");
-		} catch (IOException e1) {
-			e1.printStackTrace();
+			// 設定路徑
+			log.setLogFile(ini.getValue("File Location", "LOG_FILE_PATH") + date + "Notify.log");
+		} catch (IOException e) {
+			e.printStackTrace();
 			log.log("LOG_FILE_PATH有誤，請修改之後再重新嘗試");
+			displayError();
+			System.exit(1);
 		}
+
+		// 讀取客戶端admin資料
 		log.log("讀取Config里的[AgileAP]...");
 		username = ini.getValue("AgileAP", "username");
 		password = ini.getValue("AgileAP", "password");
 		connectString = ini.getValue("AgileAP", "url");
-		log.log(1, "成功!");
-	}
 
-	public static void main(String[] args) {
+		// 檢查是否Config有空
+		if (username.equals("") || password.equals("") || connectString.equals("")) {
 
-		// 初始化
-		Notify notify = new Notify();
+			log.log("AgileAP 裏有空！請填完再重新跑程式！");
+			displayError();
+			System.exit(1);
+		}
 
 		try {
 			log.log("嘗試登入Agile PLM環境。。");
@@ -93,98 +232,50 @@ public class Notify {
 				log.log(1, "登入成功");
 
 		} catch (APIException e) {
+
 			log.log("登入失敗，請確認[AgileAP]的資料");
+			displayError();
 			System.exit(1);
 		}
+	}
+
+	/*
+	 * 錯誤訊息
+	 */
+	private static void displayError() {
+		JOptionPane.showMessageDialog(null, "程式出錯! 請檢查LOG檔!", "Error Message", JOptionPane.ERROR_MESSAGE);
+	}
+
+	/*
+	 * 主程式 流程 
+	 * 1.讀取Excel 
+	 * 2.讀取超時工作 
+	 * 3.讀取未簽核表單(Change,PSR,QCR) 
+	 * 4.寄信給使用者
+	 */
+	public static void main(String[] args) {
+
+		// 初始化
+		Notify notify = new Notify();
 
 		try {
-			readExcelforPPM();
+			processExcelforPPM();
 			getOverdueProjects();
 			log.log("已讀完PPM模組部分，即將開始PC模組的部分\n");
-
-			log.log("讀取CHANGE相關的未簽核資料");
-			notify.getChangeTable();
-
-			log.log("讀取PSR相關的未簽核資料");
-			notify.getPSRTable();
-
-			log.log("讀取QCR相關的未簽核資料");
-			notify.getQCRTable();
+			notify.getIncompleteChange();
+			notify.getIncompletePSR();
+			notify.getIncompleteQCR();
 			log.log("讀取結束，準備寄信");
 
-			sendMail(props);
+			notifyRelevantUsers(props);
 			log.log("程式正常結束,無異常.\n");
-			
 
 		} catch (Exception e) {
 			e.printStackTrace();
+			displayError();
 			System.exit(1);
 		}
 
-	}
-
-	private static void readExcelforPPM() {
-		// Read Excel File
-		try {
-			Date today = new Date();
-			SimpleDateFormat format = new SimpleDateFormat("MMdd");
-			filename = format.format(today) + "NoticeChange.xlsx";
-			fileLocation = ini.getValue("File Location", "FILE_PATH");
-			try {
-				fis = new FileInputStream(new File(fileLocation + filename));
-			} catch (Exception e) {
-				log.log("找不到Excel檔案，請檢查File Location里面的FILE_PATH");
-				return;
-			}
-			HSSFWorkbook workbook = new HSSFWorkbook(fis);
-			HSSFSheet spreadsheet = workbook.getSheetAt(0);
-			Iterator<Row> rowIterator = spreadsheet.iterator();
-			// skip first row
-			rowIterator.next();
-
-			// read sheet
-			log.log("讀取Excel裡面的資料。。。");
-			while (rowIterator.hasNext()) {
-				HSSFRow row = (HSSFRow) rowIterator.next();
-				Iterator<Cell> cellIterator = row.cellIterator();
-				String role = cellIterator.next().getStringCellValue();// role
-				String name = cellIterator.next().getStringCellValue();// name
-				String userID = cellIterator.next().getStringCellValue();// userid
-				String email = cellIterator.next().getStringCellValue();// email
-				String programName = cellIterator.next().getStringCellValue();// project
-																				// name
-				String URL = cellIterator.next().getStringCellValue();// url
-				String assignedBy = cellIterator.next().getStringCellValue();// assigned
-																				// by
-				log.log("角色: " + role + " 名字: " + name + " ID: " + userID + " 信箱: " + email + " 方案ID: " + programName
-						+ " 指派人: " + assignedBy);
-				// Check if user is the current updated.
-				IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, programName);
-				ICell cell = program.getCell("Page Three." + role);
-				String userInCell = cell.getValue().toString();
-				log.log("檢查使用者是否是當下指派的員工。。	");
-
-				// if user currently is in the role
-				if (StringUtils.contains(userInCell, userID)) {
-					log.log(1, name + " 是當下指派的員工");
-					if (userList.get(name) != null) {
-						User user = userList.get(name);
-						user.addNewProject(programName, URL, assignedBy);
-						// adds new role and also check if it is already added
-						user.addNewRole(programName, role);
-					} else {
-						User user = new User(name, userID, email, programName, URL, assignedBy, role);
-						userList.put(name, user);
-					}
-				} else {
-					log.log(1, name + " 不是當下指派的員工，這代表在發這封郵件之前他/她曾經有被指派到這個角色但是又被移除了");
-					log.log(1, "跳過。");
-				}
-			}
-			fis.close();
-		} catch (IOException | APIException e) {
-			e.printStackTrace();
-		}
 	}
 
 	private static Properties initializeProperties() {
@@ -205,6 +296,7 @@ public class Notify {
 		} catch (Exception e) {
 			e.printStackTrace();
 			log.log("系統在設定寄件性能時出錯,請確認[Admin Mail]裡的設定都是正確再重試");
+			displayError();
 			System.exit(1);
 		}
 		return props;
@@ -223,17 +315,15 @@ public class Notify {
 
 			log.log("成功連接MAIL");
 
-		} catch (NoSuchProviderException e) {
-			log.log("登入失敗,請查看 [Admin Mail] 的前3項是否正確");
-			System.exit(1);
 		} catch (MessagingException e) {
-			log.log("登入失敗,請查看 [Admin Mail] 的設定是否正確");
+			log.log("登入失敗,請查看 [Admin Mail] 的前3項是否正確");
+			displayError();
 			System.exit(1);
 		}
 
 	}
 
-	private static void sendMail(Properties props) {
+	private static void notifyRelevantUsers(Properties props) {
 		try {
 			String username = ini.getValue("Admin Mail", "username");
 			String password = ini.getValue("Admin Mail", "password");
@@ -273,9 +363,9 @@ public class Notify {
 					html.append(((User) pair.getValue()).toPCString());
 				}
 				html.append("<p></p>");
-				if (usr.getOverdueWork()!=null) {
+				if (usr.getOverdueWork() != null) {
 					html.append("<p>以下是您超時的工作明細</p>");
-					html.append(((User)pair.getValue()).toOverdueString());
+					html.append(((User) pair.getValue()).toOverdueString());
 				}
 				html.append("</body></html>");
 				html.append("<p>Sincerely,</p><p></p><p>Your Agile PLM Administrator</p>");
@@ -302,83 +392,157 @@ public class Notify {
 			}
 		} catch (AddressException e) {
 			e.printStackTrace();
+			displayError();
 		} catch (NoSuchProviderException e) {
 			e.printStackTrace();
+			displayError();
 		} catch (MessagingException e) {
 			e.printStackTrace();
+			displayError();
 		}
 
 	}
 
-	public static void getOverdueProjects() {
-		try{
-		log.log(1, "Accessing database for Overdue tasks");
-		if (ini.getValue("AgileAP", "url") == null) {
-			log.log(1, "請確定 [AgileAP] 裡的　url　有填寫再重新跑一次");
-			System.exit(1);
-		}
-		String URL = "<a href='";
-		URL = URL + ini.getValue("AgileAP", "url") + PPM;
-		Connection conA = null;
-		log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
-		conA = AUtil.getDbConn(ini, "AgileDB");
-		String sql = "select name,activity_number,id,sch_end_date,round((sysdate-sch_end_date)) as overdue_duration from activity where act_end_date is null and act_start_date is not null and SYSDATE > sch_end_date order by sch_end_date desc";
-		ResultSet rs = conA.createStatement().executeQuery(sql);
-		
-		while (rs.next()) {
-			String programName = rs.getString(1);
-			String programID = rs.getString(2);
-			String objID = rs.getString(3);
-			Date scheduledEndDate = rs.getDate(4);
-			String overdueDuration = rs.getString(5);
-			
-			IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, programID);
-			String owner = ((IAgileList)program.getValue(ProgramConstants.ATT_GENERAL_INFO_OWNER)).toString();
-			owner = owner.substring(owner.lastIndexOf("(")+1, owner.lastIndexOf(")"));
-			
-			IUser usr = (IUser) session.getObject(IUser.OBJECT_TYPE, owner);
-			String firstName = (String) usr.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
-			String email = (String) usr.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
-			String type = program.getAgileClass().getAPIName();
-			if (userList.containsKey(firstName)) {
-				User user = userList.get(firstName);
-				String result = userList.get(firstName).getOverdueWork();
-				if(result!=null){
-					result=result+"<tr><td>" + type + "</td><td nowrap='nowrap'>" + URL + objID + "'>"
-							+ programName + "</a></td><td>" + scheduledEndDate + "</td><td>" + overdueDuration + "</td></tr>";
-					user.setOverdueWork(result);
-					userList.put(firstName, user);
-				}
-				else{
-					result = "<tr><td>" + type + "</td><td nowrap='nowrap'>" + URL + objID + "'>"
-							+ programName + "</a></td><td>" + scheduledEndDate + "</td><td>" + overdueDuration + "</td></tr>";
-					user.setOverdueWork(result);
-					userList.put(firstName, user);
-					
-				}
-			}else{
-				User user = new User();
-				String result = "<tr><td>" + type + "</td><td nowrap='nowrap'>" + URL + objID + "'>"
-						+ programName + "</a></td><td>" + scheduledEndDate + "</td><td>" + overdueDuration + "</td></tr>";
-				user.setOverdueWork(result);
-				user.setEmail(email);
-				userList.put(firstName, user);
-				
+	/*
+	 * 第一部分： 讀取Excel並將相關用戶加進User Class
+	 * 由於另一個程式將記錄任何的添加/替換變更，在這裡需要特別再去檢查當下使用者是否符合Excel檔所描述的
+	 */
+	private static void processExcelforPPM() {
+		try {
+			Date today = new Date();
+			SimpleDateFormat format = new SimpleDateFormat("MMdd");
+			filename = format.format(today) + "NoticeChange.xlsx";
+			fileLocation = ini.getValue("File Location", "FILE_PATH");
+			try {
+				fis = new FileInputStream(new File(fileLocation + filename));
+			} catch (Exception e) {
+				log.log("找不到Excel檔案，請檢查File Location里面的FILE_PATH\n跳過");
+				return;
 			}
-			
-		}conA.close();
-		}catch(Exception e){
+			HSSFWorkbook workbook = new HSSFWorkbook(fis);
+			HSSFSheet spreadsheet = workbook.getSheetAt(0);
+			Iterator<Row> rowIterator = spreadsheet.iterator();
+			// 跳過第一行
+			rowIterator.next();
+	
+			log.log("讀取Excel裡面的資料。。。");
+			while (rowIterator.hasNext()) {
+				HSSFRow row = (HSSFRow) rowIterator.next();
+				Iterator<Cell> cellIterator = row.cellIterator();
+				// | User Role	| Name	| user.id |	Email |	Project Name |	Project Link |	Assigned By |
+				String role = cellIterator.next().getStringCellValue();
+				String name = cellIterator.next().getStringCellValue();
+				String userID = cellIterator.next().getStringCellValue();
+				String email = cellIterator.next().getStringCellValue();
+				String programName = cellIterator.next().getStringCellValue();
+				String URL = cellIterator.next().getStringCellValue();
+				String assignedBy = cellIterator.next().getStringCellValue();
+																				
+				log.log("角色: " + role + " 名字: " + name + " ID: " + userID + " 信箱: " + email + " 方案ID: " + programName
+						+ " 指派人: " + assignedBy);
+				
+				// 檢查是否使用者是當下指派的員工
+				IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, programName);
+				ICell cell = program.getCell("Page Three." + role);
+				String userInCell = cell.getValue().toString();
+				log.log("檢查使用者是否是當下指派的員工。。	");
+	
+				// 是 -> 記錄下來
+				if (StringUtils.contains(userInCell, userID)) {
+					log.log(1, name + " 是當下指派的員工");
+					
+					//要是已經記錄 -> 
+					if (userList.get(name) != null) {
+						User user = userList.get(name);
+						user.addNewProject(programName, URL, assignedBy);
+						// adds new role and also check if it is already added
+						user.addNewRole(programName, role);
+					} else {
+						User user = new User(name, userID, email, programName, URL, assignedBy, role);
+						userList.put(name, user);
+					}
+				// 不是-> 跳過
+				} else {
+					log.log(1, name + " 不是當下指派的員工，這代表在發這封郵件之前他/她曾經有被指派到這個角色但是又被移除了");
+					log.log(1, "跳過。");
+				}
+			}
+			fis.close();
+		} catch (IOException | APIException e) {
 			e.printStackTrace();
+			displayError();
 		}
-		
-		
+	}
+
+	public static void getOverdueProjects() {
+		try {
+			log.log(1, "Accessing database for Overdue tasks");
+			if (ini.getValue("AgileAP", "url") == null) {
+				log.log(1, "請確定 [AgileAP] 裡的　url　有填寫再重新跑一次");
+				System.exit(1);
+			}
+			String URL = "<a href='";
+			URL = URL + ini.getValue("AgileAP", "url") + PPM;
+			Connection conA = null;
+			log.log(1, "嘗試連接database...\n要是出錯請確認 database 的 config 是正確的");
+			conA = AUtil.getDbConn(ini, "AgileDB");
+			String sql = "select name,activity_number,id,sch_end_date,round((sysdate-sch_end_date)) as overdue_duration from activity where act_end_date is null and act_start_date is not null and SYSDATE > sch_end_date order by sch_end_date desc";
+			ResultSet rs = conA.createStatement().executeQuery(sql);
+
+			while (rs.next()) {
+				String programName = rs.getString(1);
+				String programID = rs.getString(2);
+				String objID = rs.getString(3);
+				Date scheduledEndDate = rs.getDate(4);
+				String overdueDuration = rs.getString(5);
+
+				IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, programID);
+				String owner = ((IAgileList) program.getValue(ProgramConstants.ATT_GENERAL_INFO_OWNER)).toString();
+				owner = owner.substring(owner.lastIndexOf("(") + 1, owner.lastIndexOf(")"));
+
+				IUser usr = (IUser) session.getObject(IUser.OBJECT_TYPE, owner);
+				String firstName = (String) usr.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
+				String email = (String) usr.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
+				String type = program.getAgileClass().getAPIName();
+				if (userList.containsKey(firstName)) {
+					User user = userList.get(firstName);
+					String result = userList.get(firstName).getOverdueWork();
+					if (result != null) {
+						result = result + "<tr><td>" + type + "</td><td nowrap='nowrap'>" + URL + objID + "'>"
+								+ programName + "</a></td><td>" + scheduledEndDate + "</td><td>" + overdueDuration
+								+ "</td></tr>";
+						user.setOverdueWork(result);
+						userList.put(firstName, user);
+					} else {
+						result = "<tr><td>" + type + "</td><td nowrap='nowrap'>" + URL + objID + "'>" + programName
+								+ "</a></td><td>" + scheduledEndDate + "</td><td>" + overdueDuration + "</td></tr>";
+						user.setOverdueWork(result);
+						userList.put(firstName, user);
+
+					}
+				} else {
+					User user = new User();
+					String result = "<tr><td>" + type + "</td><td nowrap='nowrap'>" + URL + objID + "'>" + programName
+							+ "</a></td><td>" + scheduledEndDate + "</td><td>" + overdueDuration + "</td></tr>";
+					user.setOverdueWork(result);
+					user.setEmail(email);
+					userList.put(firstName, user);
+
+				}
+
+			}
+			conA.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+			displayError();
+		}
 
 	}
 
 	/*
 	 * 郵件內容需包括一個表格，表頭欄位為：表單編號(可超連結)、表單描述、站別、已持續時間(天)
 	 */
-	public void getChangeTable() throws Exception {
+	public void getIncompleteChange() throws Exception {
 		log.log(1, "Accessing database for Change");
 		if (ini.getValue("AgileAP", "url") == null) {
 			log.log(1, "請確定 [AgileAP] 裡的　URL　有填寫再重新跑一次");
@@ -412,7 +576,7 @@ public class Notify {
 
 	}
 
-	public void getQCRTable() throws Exception {
+	public void getIncompleteQCR() throws Exception {
 
 		log.log(1, "Accessing database for QCR");
 		if (ini.getValue("AgileAP", "url") == null) {
@@ -447,7 +611,7 @@ public class Notify {
 
 	}
 
-	public void getPSRTable() throws Exception {
+	public void getIncompletePSR() throws Exception {
 
 		log.log(1, "Accessing database for PSR");
 		if (ini.getValue("AgileAP", "url") == null) {
@@ -537,124 +701,10 @@ public class Notify {
 			}
 		} catch (Exception e) {
 			log.log("執行SQL時遇到問題,請確認 [AgileDB] 的設定正確");
+			displayError();
 			System.exit(1);
 		}
 	}
 
-	public static class User {
-		private String name;
-		private String userID;
-		private String email;
-		private String workflow;
-		private String overdueWork;
-		public HashMap<String, String[]> projects = new HashMap<String, String[]>(); // project
-																						// and
-																						// link
-		public HashMap<String, String> roles = new HashMap<String, String>();// project
-																				// and
-																				// role
-
-		public User() {
-
-		}
-
-		public User(String name, String userID, String email, String project, String URL, String assignedBy,
-				String role) {
-			this.setName(name);
-			this.setEmail(email);
-			this.setUserID(userID);
-			projects.put(project, new String[] { URL, assignedBy });
-			roles.put(project, role);
-		}
-
-		public String getName() {
-			return name;
-		}
-
-		public void setName(String name) {
-			this.name = name;
-		}
-
-		public String getUserID() {
-			return userID;
-		}
-
-		public void setUserID(String userID) {
-			this.userID = userID;
-		}
-
-		public String getEmail() {
-			return email;
-		}
-
-		public void setEmail(String email) {
-			this.email = email;
-		}
-
-		public String getWorkflow() {
-			return workflow;
-		}
-
-		public void setWorkflow(String workflow) {
-			this.workflow = workflow;
-		}
-
-		public void addNewProject(String project, String URL, String assignedBy) {
-			projects.put(project, new String[] { URL, assignedBy });
-		}
-
-		public void addNewRole(String project, String role) {
-			if (roles.get(project) == null) {
-				roles.put(project, role);
-				return;
-			}
-			String newRole = roles.get(project);
-			if (!StringUtils.contains(newRole, role))
-				newRole = newRole + " " + role;
-			roles.put(project, newRole);
-		}
-
-		public String getOverdueWork() {
-			return overdueWork;
-		}
-
-		public void setOverdueWork(String overdueWork) {
-			this.overdueWork = overdueWork;
-		}
-
-		public String toPPMString() {
-			String toReturn = "<table><tr><td>Project Name</td><td>Project ID</td><td>Assigned By</td><td>Role(s) Assigned</td><td>Link</td></tr>";
-			Iterator iter = projects.entrySet().iterator();
-			while (iter.hasNext()) {
-				Map.Entry pair = (Map.Entry) iter.next();
-
-				String projectName = "did not find project";
-				try {
-					IProgram program = (IProgram) session.getObject(IProgram.OBJECT_TYPE, pair.getKey());
-					projectName = (String) program.getValue(ProgramConstants.ATT_GENERAL_INFO_NAME);
-				} catch (APIException e) {
-					e.printStackTrace();
-				}
-				toReturn += "<tr><td>" + projectName + "</td><td>" + pair.getKey() + "</td><td>"
-						+ ((String[]) pair.getValue())[1] + "</td><td>" + roles.get(pair.getKey()) + "</td><td><a href="
-						+ ((String[]) pair.getValue())[0] + ">Link to project</a></td></tr>";
-			}
-			toReturn += "</table>";
-			return toReturn;
-		}
-
-		public String toPCString() {
-			String toReturn = "<table><tr><td>表單類別</td><td>表單編號</td><td>表單描述</td><td>站別</td><td>已持續時間(天)</td></tr>";
-			toReturn += this.getWorkflow() + "</table>";
-
-			return toReturn;
-		}
-		
-		public String toOverdueString(){
-			String toReturn = "<table><tr><td>工作編號</td><td>工作類別</td><td>預計結束時間</td><td>已持續時間(天)</td></tr>";
-			toReturn += this.getOverdueWork() + "</table>";
-			return toReturn;
-		}
-
-	}
+	
 }
