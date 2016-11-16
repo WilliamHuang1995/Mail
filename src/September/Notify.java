@@ -51,6 +51,9 @@ import com.anselm.plm.utilobj.LogIt;
 
 import util.WebClient;
 
+/*
+ * 此程式為主程式，負責寄信給相關用戶
+ */
 public class Notify {
 	private static Ini ini = null;
 	private static LogIt log = null;
@@ -226,6 +229,7 @@ public class Notify {
 			displayError();
 			System.exit(1);
 		}
+		testRunMail();
 
 		try {
 			log.log("嘗試登入Agile PLM環境。。");
@@ -240,7 +244,7 @@ public class Notify {
 			System.exit(1);
 		}
 		testSQLConnection();
-		testRunMail();
+		
 		
 		
 		
@@ -312,6 +316,11 @@ public class Notify {
 			log.log(1, "Transport Protocol: " + transportProtocol);
 			log.log(1, "Mail host         : " + host);
 			log.log(1, "Protocol Port     : " + protocolPort);
+			if(transportProtocol.equals("")||host.equals("")||protocolPort.equals("")){
+				log.log("Admin Mail設定裏不能為空！");
+				displayError();
+				System.exit(1);
+			}
 			props.setProperty("mail.transport.protocol", transportProtocol);
 			props.setProperty("mail.host", host);
 			props.setProperty("mail.protocol.port", protocolPort);
@@ -337,10 +346,6 @@ public class Notify {
 		try {
 			MimeMessage message = new MimeMessage(mailSession);
 			Transport transport = mailSession.getTransport();
-			Multipart email = new MimeMultipart();
-			
-			message.setContent(email);
-			message.addRecipient(Message.RecipientType.TO, new InternetAddress("william@anselm.com.tw"));
 			transport.connect(username, password);
 			transport.close();
 			log.log("成功連接MAIL");

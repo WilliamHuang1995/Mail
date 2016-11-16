@@ -83,15 +83,9 @@ public class NoticeChangePPM implements IEventAction {
 			e.printStackTrace();
 		}
 
-		// Initialize role list
-		String roleFromConfig = ini.getValue("Settings", "role");
-		log.log("初始化Role List");
-		roleList = new ArrayList<String>(Arrays.asList(roleFromConfig.split("\\s*,\\s*")));
-		log.log(roleList);
-		// Initialize current user
-		currentUser = "Unknown";
-
 	}
+
+
 
 	private boolean checkExist() {
 		return (new File(fileLocation + filename)).exists();
@@ -103,15 +97,26 @@ public class NoticeChangePPM implements IEventAction {
 	public EventActionResult doAction(IAgileSession session, INode actionNode, IEventInfo event) {
 
 		try {
+			// Initialize role list
+			String roleFromConfig = ini.getValue("Settings", "role");
+			// If no roles specified
+			if (roleFromConfig.equals("")) {
+				log.log("Config檔裏沒有設定使用者角色!");
+				return new EventActionResult(event, new ActionResult(ActionResult.NORESULT, null));
+				
+			}
+			log.log("讀取Role List");
+			roleList = new ArrayList<String>(Arrays.asList(roleFromConfig.split("\\s*,\\s*")));
+			log.log(roleList);
+			
 			// The event is an update event
 			IUpdateEventInfo info = (IUpdateEventInfo) event;
-			
-			
+
 			// Get current user
 			log.log("讀取當前用戶");
 			IUser sessionUser = session.getCurrentUser();
 			currentUser = (String) sessionUser.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
-			
+
 			// get admin session
 			session = AUtil.getAgileSession(ini, "AgileAP");
 
@@ -120,55 +125,57 @@ public class NoticeChangePPM implements IEventAction {
 			Map<String, Object[]> empinfo = new TreeMap<String, Object[]>();
 			log.log("檢查Excel檔是否存在");
 			if (!checkExist()) {
-				log.log(1,"不存在");
-				empinfo.put(mappingIndex + "",
-						new Object[] { "User Role", "Name", "user.id", "Email", "Project Name", "Project Link", "Assigned By" });
+				log.log(1, "不存在");
+				empinfo.put(mappingIndex + "", new Object[] { "User Role", "Name", "user.id", "Email", "Project Name",
+						"Project Link", "Assigned By" });
 			}
 
 			IEventDirtyCell[] cells = info.getCells();
 			log.log("讀取Project資料。。。");
 			IProgram program = (IProgram) session.getObject(info.getDataObject().getAgileClass(),
 					info.getDataObject().getName());
-			log.log(1,"Project : "+program.getName());
-			
+			log.log(1, "Project : " + program.getName());
+
 			log.log("讀取變更欄位。。。");
 			for (IEventDirtyCell dirtyCell : cells) {
-				
-				//檢查config裡面的role list有包含dirty cell
+
+				// 檢查config裡面的role list有包含dirty cell
 				if (roleList.contains(dirtyCell.getAttribute().getName())) {
 					String attributeName = dirtyCell.getAttribute().getName();
 					ICell cleanCell = program.getCell(dirtyCell.getAttributeId());
-					
-					log.log("config裡有包含"+dirtyCell.getAttribute().getName()+"! 繼續！");
+
+					log.log("config裡有包含" + dirtyCell.getAttribute().getName() + "! 繼續！");
 					// gets the objID integer, this is used for creating a link
 					String objID = program.getId().toString();
 					ArrayList<String> idList = new ArrayList<String>(Arrays.asList(objID.split("\\s*=\\s*")));
 					objID = idList.get(1).substring(0, idList.get(1).indexOf(" "));
-					
-					//This is used to turn a string representation of values into an ArrayList 
+
+					// This is used to turn a string representation of values
+					// into an ArrayList
 					ArrayList<String> oldValue = new ArrayList<String>(
 							Arrays.asList(cleanCell.getValue().toString().split("\\s*;\\s*")));
 					ArrayList<String> newValue = new ArrayList<String>(
 							Arrays.asList(dirtyCell.getValue().toString().split("\\s*;\\s*")));
 					newValue.removeAll(oldValue);
-					
-					log.log("被添加的值是： ");	log.log(newValue);
+
+					log.log("被添加的值是： ");
+					log.log(newValue);
 					Iterator<String> it = newValue.iterator();
 					// loop thru new ppl
 					while (it.hasNext()) {
-						//讀取值裡的所有user
+						// 讀取值裡的所有user
 						String nextUser = it.next();
 						String userID = nextUser.substring(nextUser.lastIndexOf("(") + 1, nextUser.lastIndexOf(")"));
 						IUser user = (IUser) session.getObject(IUser.OBJECT_TYPE, userID);
 						String userEmail = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_EMAIL);
 						String userName = (String) user.getValue(UserConstants.ATT_GENERAL_INFO_FIRST_NAME);
-						log.log(attributeName + " " + userName + " " +userID +" "+ userEmail + " " + program.getName()+" "+objID+ " "+ currentUser);
+						log.log(attributeName + " " + userName + " " + userID + " " + userEmail + " "
+								+ program.getName() + " " + objID + " " + currentUser);
 						empinfo.put(++mappingIndex + "", new Object[] { attributeName, userName, userID, userEmail,
 								program.getName(), ini.getValue("Server Info", "url") + URL + objID, currentUser });
 					}
-				}
-				else{
-					log.log("config沒有包含"+dirtyCell.getAttribute().getName()+" ! 跳過!");
+				} else {
+					log.log("config沒有包含" + dirtyCell.getAttribute().getName() + " ! 跳過!");
 				}
 			}
 
